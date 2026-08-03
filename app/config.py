@@ -36,7 +36,7 @@ SCORE_WEIGHTS = {
     "tls_expired": 25,
     "tls_expiring_soon": 10,
     "no_https_redirect": 10,
-    "missing_security_header": 5,
+    "missing_security_header": 8,
     "version_leak": 5,
 }
 
