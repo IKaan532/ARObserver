@@ -6,6 +6,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite:///./data/arobserver.db"
     targets_file: str = "targets.yaml"
+    display_timezone: str = "Europe/Istanbul"
     log_level: str = "INFO"
     retention_days: int = 90
     default_check_interval_minutes: int = 5

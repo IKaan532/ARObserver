@@ -27,7 +27,7 @@
     <div class="meta">
       {{ card.target.url }}<br>
       {% if card.last_check %}
-        Son kontrol: {{ card.last_check.checked_at.strftime('%d.%m.%Y %H:%M') }}<br>
+        Son kontrol: {{ card.last_check.checked_at|local_dt }}<br>
       {% endif %}
       {% if card.cert_days_remaining is not none %}
         Sertifikaya kalan gün: {{ card.cert_days_remaining }}

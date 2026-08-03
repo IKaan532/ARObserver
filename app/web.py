@@ -1,5 +1,6 @@
 import json
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
@@ -7,11 +8,26 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models import Alert, Check, Target
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+
+_display_tz = ZoneInfo(settings.display_timezone)
+
+
+def to_local(value: datetime) -> datetime:
+    """Checks/alerts are stored as naive UTC (datetime.utcnow()); convert for display."""
+    return value.replace(tzinfo=ZoneInfo("UTC")).astimezone(_display_tz)
+
+
+def local_dt(value: datetime, fmt: str = "%d.%m.%Y %H:%M") -> str:
+    return to_local(value).strftime(fmt)
+
+
+templates.env.filters["local_dt"] = local_dt
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -49,7 +65,7 @@ def target_detail(request: Request, target_id: int, db: Session = Depends(get_db
     )
 
     chart_data = {
-        "labels": [check.checked_at.strftime("%d.%m %H:%M") for check in checks],
+        "labels": [local_dt(check.checked_at, "%d.%m %H:%M") for check in checks],
         "response_times": [check.response_time_ms for check in checks],
         "scores": [check.score for check in checks],
     }

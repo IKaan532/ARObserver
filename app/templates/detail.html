@@ -8,7 +8,7 @@
 {% if open_alerts %}
 <h2>Açık Uyarılar</h2>
 {% for alert in open_alerts %}
-<div class="alert-box"><strong>{{ alert.alert_type }}</strong> — {{ alert.message }} <span class="meta">({{ alert.created_at.strftime('%d.%m.%Y %H:%M') }})</span></div>
+<div class="alert-box"><strong>{{ alert.alert_type }}</strong> — {{ alert.message }} <span class="meta">({{ alert.created_at|local_dt }})</span></div>
 {% endfor %}
 {% endif %}
 
