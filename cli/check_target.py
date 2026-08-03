@@ -3,6 +3,7 @@ import asyncio
 import json
 
 from app.checks.dns import check_dns
+from app.checks.headers import check_headers
 from app.checks.reachability import check_reachability
 from app.checks.redirect import check_https_redirect
 from app.checks.tls import check_tls
@@ -13,7 +14,15 @@ async def run_checks(url: str) -> dict:
     redirect = await check_https_redirect(url)
     dns = check_dns(url)
     tls = check_tls(url)
-    return {"url": url, "reachability": reachability, "redirect": redirect, "dns": dns, "tls": tls}
+    headers = await check_headers(url)
+    return {
+        "url": url,
+        "reachability": reachability,
+        "redirect": redirect,
+        "dns": dns,
+        "tls": tls,
+        "headers": headers,
+    }
 
 
 def main() -> None:
