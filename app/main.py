@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from sqlalchemy import text
 
+from app.api import alerts, checks, targets
 from app.database import Base, engine
 from app import models
 from app.scheduler import start_scheduler, stop_scheduler
@@ -17,6 +18,9 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ARObserver", lifespan=lifespan)
+app.include_router(targets.router)
+app.include_router(checks.router)
+app.include_router(alerts.router)
 
 
 @app.get("/health")
