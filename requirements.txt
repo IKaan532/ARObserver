@@ -3,7 +3,7 @@ uvicorn[standard]
 httpx
 sqlalchemy
 apscheduler
-jinja2
+nicegui
 pydantic-settings
 pyyaml
 python-multipart

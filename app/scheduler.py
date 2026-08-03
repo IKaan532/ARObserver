@@ -26,6 +26,40 @@ RELOAD_JOB_ID = "reload-targets"
 RETENTION_JOB_ID = "cleanup-retention"
 RELOAD_INTERVAL_SECONDS = 60
 RETENTION_INTERVAL_HOURS = 24
+MANUAL_TRIGGER_COOLDOWN_SECONDS = 30
+
+_running_target_ids: set[int] = set()
+_last_manual_trigger: dict[int, datetime] = {}
+
+
+def is_target_running(target_id: int) -> bool:
+    return target_id in _running_target_ids
+
+
+def _cooldown_remaining(target_id: int) -> float:
+    last = _last_manual_trigger.get(target_id)
+    if last is None:
+        return 0.0
+    elapsed = (datetime.now() - last).total_seconds()
+    return max(0.0, MANUAL_TRIGGER_COOLDOWN_SECONDS - elapsed)
+
+
+async def _run_manual_check(target_id: int) -> None:
+    _running_target_ids.add(target_id)
+    try:
+        await run_target_check(target_id)
+    finally:
+        _running_target_ids.discard(target_id)
+
+
+def trigger_manual_check(target_id: int) -> str:
+    if is_target_running(target_id):
+        return "running"
+    if _cooldown_remaining(target_id) > 0:
+        return "cooldown"
+    _last_manual_trigger[target_id] = datetime.now()
+    asyncio.create_task(_run_manual_check(target_id))
+    return "started"
 
 
 def _target_job_id(target_id: int) -> str:
