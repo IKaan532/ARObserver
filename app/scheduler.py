@@ -99,7 +99,9 @@ def reload_targets() -> None:
         trigger = IntervalTrigger(minutes=interval_minutes)
         existing_job = scheduler.get_job(job_id)
         if existing_job is None:
-            scheduler.add_job(run_target_check, trigger=trigger, args=[target_id], id=job_id)
+            scheduler.add_job(
+                run_target_check, trigger=trigger, args=[target_id], id=job_id, next_run_time=datetime.now()
+            )
         elif existing_job.trigger.interval != trigger.interval:
             scheduler.reschedule_job(job_id, trigger=trigger)
 
