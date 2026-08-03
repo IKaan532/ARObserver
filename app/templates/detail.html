@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}{{ target.name }} — ARObserver{% endblock %}
+{% block content %}
+<p><a href="/">&larr; Hedefler</a></p>
+<h1>{{ target.name }}</h1>
+<p class="meta">{{ target.url }} — kontrol aralığı: {{ target.interval_minutes }} dk</p>
+
+{% if open_alerts %}
+<h2>Açık Uyarılar</h2>
+{% for alert in open_alerts %}
+<div class="alert-box"><strong>{{ alert.alert_type }}</strong> — {{ alert.message }} <span class="meta">({{ alert.created_at.strftime('%d.%m.%Y %H:%M') }})</span></div>
+{% endfor %}
+{% endif %}
+
+<h2>Son 30 Gün</h2>
+<canvas id="responseTimeChart" height="80"></canvas>
+<canvas id="scoreChart" height="80"></canvas>
+
+{% if last_check %}
+<h2>Son Kontrol Durumu</h2>
+<table>
+  <tr><th>Madde</th><th>Durum</th></tr>
+  <tr><td>Erişilebilirlik</td><td>{% if last_check.status_code %}HTTP {{ last_check.status_code }}{% else %}Erişilemiyor{% endif %}</td></tr>
+  <tr><td>Yanıt Süresi</td><td>{% if last_check.response_time_ms %}{{ last_check.response_time_ms }} ms{% else %}-{% endif %}</td></tr>
+  <tr><td>DNS</td><td>{% if last_check.dns_result and last_check.dns_result.resolved %}Çözümlendi{% else %}Çözümlenemedi{% endif %}</td></tr>
+  <tr><td>HTTP→HTTPS Yönlendirme</td><td>{% if last_check.redirect_result and last_check.redirect_result.redirects_to_https %}Var{% else %}Yok{% endif %}</td></tr>
+  <tr>
+    <td>TLS</td>
+    <td>
+      {% if last_check.tls_result and last_check.tls_result.applicable %}
+        {% if last_check.tls_result.chain_valid %}Geçerli{% else %}Geçersiz{% endif %}, kalan gün: {{ last_check.tls_result.days_remaining }}
+      {% else %}
+        Uygulanamıyor
+      {% endif %}
+    </td>
+  </tr>
+  {% if last_check.headers_result %}
+  {% for name, info in last_check.headers_result.security_headers.items() %}
+  <tr>
+    <td>{{ name }}</td>
+    <td>
+      {% if info.present %}
+        <span class="badge badge-ok">Var</span> {{ info.value }}
+      {% else %}
+        <span class="badge badge-missing">Yok</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  {% for name, info in last_check.headers_result.info_leak.items() %}
+  <tr>
+    <td>{{ name }} (sızıntı)</td>
+    <td>
+      {% if info.reveals_version %}
+        <span class="badge badge-missing">Sürüm sızdırıyor: {{ info.value }}</span>
+      {% else %}
+        <span class="badge badge-ok">Sorun yok</span>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  {% endif %}
+  <tr><td>Skor</td><td>{{ last_check.score }} ({{ last_check.letter_grade }})</td></tr>
+</table>
+{% if last_check.score_reasons %}
+<h3>Skor Gerekçeleri</h3>
+<ul>
+  {% for reason in last_check.score_reasons %}
+  <li>{{ reason }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% else %}
+<p>Henüz kontrol verisi yok.</p>
+{% endif %}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+const chartData = {{ chart_data_json|safe }};
+new Chart(document.getElementById('responseTimeChart'), {
+  type: 'line',
+  data: {
+    labels: chartData.labels,
+    datasets: [{ label: 'Yanıt Süresi (ms)', data: chartData.response_times, borderColor: '#2563eb', tension: 0.2 }]
+  },
+  options: { responsive: true }
+});
+new Chart(document.getElementById('scoreChart'), {
+  type: 'line',
+  data: {
+    labels: chartData.labels,
+    datasets: [{ label: 'Skor', data: chartData.scores, borderColor: '#16a34a', tension: 0.2 }]
+  },
+  options: { responsive: true, scales: { y: { min: 0, max: 100 } } }
+});
+</script>
+{% endblock %}

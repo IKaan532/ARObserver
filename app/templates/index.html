@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}ARObserver — Hedefler{% endblock %}
+{% block content %}
+<h1>Hedefler</h1>
+{% if not cards %}
+<p>Henüz izlenen hedef yok. <code>targets.yaml</code> dosyasını kontrol edin.</p>
+{% endif %}
+<div class="cards">
+  {% for card in cards %}
+  <div class="card">
+    <a href="/targets/{{ card.target.id }}">
+      <h3>{{ card.target.name }}</h3>
+    </a>
+    <div>
+      {% if card.last_check %}
+        <span class="grade grade-{{ card.last_check.letter_grade or 'none' }}">{{ card.last_check.letter_grade or '-' }}</span>
+        {% if card.last_check.status_code %}
+          <span class="badge badge-ok">HTTP {{ card.last_check.status_code }}</span>
+        {% else %}
+          <span class="badge badge-missing">Erişilemiyor</span>
+        {% endif %}
+      {% else %}
+        <span class="grade grade-none">-</span>
+        <span class="badge badge-missing">Henüz kontrol edilmedi</span>
+      {% endif %}
+    </div>
+    <div class="meta">
+      {{ card.target.url }}<br>
+      {% if card.last_check %}
+        Son kontrol: {{ card.last_check.checked_at.strftime('%d.%m.%Y %H:%M') }}<br>
+      {% endif %}
+      {% if card.cert_days_remaining is not none %}
+        Sertifikaya kalan gün: {{ card.cert_days_remaining }}
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

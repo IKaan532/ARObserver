@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}ARObserver{% endblock %}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f5f6f8; color: #1a1a1a; }
+    header { background: #1f2937; color: white; padding: 1rem 2rem; }
+    header a { color: white; text-decoration: none; font-weight: 600; }
+    main { padding: 2rem; max-width: 1100px; margin: 0 auto; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+    .card { background: white; border-radius: 8px; padding: 1rem 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+    .card h3 { margin: 0 0 0.5rem; }
+    .card a { color: inherit; text-decoration: none; }
+    .grade { display: inline-block; width: 2rem; height: 2rem; border-radius: 50%; color: white; text-align: center; line-height: 2rem; font-weight: 700; }
+    .grade-A { background: #16a34a; }
+    .grade-B { background: #65a30d; }
+    .grade-C { background: #ca8a04; }
+    .grade-D { background: #ea580c; }
+    .grade-F { background: #dc2626; }
+    .grade-none { background: #9ca3af; }
+    .meta { font-size: 0.85rem; color: #4b5563; margin-top: 0.5rem; }
+    table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+    th, td { text-align: left; padding: 0.4rem 0.6rem; border-bottom: 1px solid #e5e7eb; }
+    .badge { padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.8rem; }
+    .badge-ok { background: #dcfce7; color: #166534; }
+    .badge-missing { background: #fee2e2; color: #991b1b; }
+    .alert-box { background: #fef2f2; border: 1px solid #fecaca; padding: 0.75rem 1rem; border-radius: 6px; margin-bottom: 0.5rem; }
+    canvas { background: white; border-radius: 8px; padding: 0.5rem; margin-bottom: 1.5rem; }
+  </style>
+</head>
+<body>
+  <header><a href="/">ARObserver</a></header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
