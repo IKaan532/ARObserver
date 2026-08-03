@@ -1,18 +1,22 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from sqlalchemy import text
 
-from app.database import Base, SessionLocal, engine
+from app.database import Base, engine
 from app import models
-from app.targets_loader import sync_targets
-
-app = FastAPI(title="ARObserver")
+from app.scheduler import start_scheduler, stop_scheduler
 
 
-@app.on_event("startup")
-def on_startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    with SessionLocal() as db:
-        sync_targets(db)
+    start_scheduler()
+    yield
+    stop_scheduler()
+
+
+app = FastAPI(title="ARObserver", lifespan=lifespan)
 
 
 @app.get("/health")
