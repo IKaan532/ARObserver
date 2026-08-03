@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+httpx
+sqlalchemy
+apscheduler
+jinja2
+pydantic-settings
+pyyaml
+python-multipart

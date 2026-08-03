@@ -1,0 +1,5 @@
+targets:
+  - name: Example Site
+    url: https://example.com
+    interval_minutes: 5
+    tags: [public, example]
