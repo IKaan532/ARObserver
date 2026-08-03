@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
+from app.alerting.rules import evaluate_rules, notify
 from app.checks.dns import check_dns
 from app.checks.headers import check_headers
 from app.checks.reachability import check_reachability
@@ -54,24 +55,31 @@ async def run_target_check(target_id: int) -> None:
         cert_expiry_date = datetime.fromisoformat(tls["valid_to"]).replace(tzinfo=None)
 
     with SessionLocal() as db:
-        db.add(
-            Check(
-                target_id=target_id,
-                status_code=reachability.get("status_code"),
-                response_time_ms=reachability.get("response_time_ms"),
-                is_timeout=reachability.get("timeout", False),
-                error_message=reachability.get("error"),
-                dns_result=dns,
-                redirect_result=redirect,
-                tls_result=tls,
-                headers_result=headers,
-                cert_expiry_date=cert_expiry_date,
-                score=scoring["score"],
-                letter_grade=scoring["letter_grade"],
-                score_reasons=scoring["reasons"],
-            )
+        check = Check(
+            target_id=target_id,
+            status_code=reachability.get("status_code"),
+            response_time_ms=reachability.get("response_time_ms"),
+            is_timeout=reachability.get("timeout", False),
+            error_message=reachability.get("error"),
+            dns_result=dns,
+            redirect_result=redirect,
+            tls_result=tls,
+            headers_result=headers,
+            cert_expiry_date=cert_expiry_date,
+            score=scoring["score"],
+            letter_grade=scoring["letter_grade"],
+            score_reasons=scoring["reasons"],
         )
+        db.add(check)
         db.commit()
+        db.refresh(check)
+
+        target = db.get(Target, target_id)
+        new_alerts = evaluate_rules(db, target, check)
+        db.commit()
+
+        notify(new_alerts)
+
     logger.info("target %s checked: score=%s grade=%s", url, scoring["score"], scoring["letter_grade"])
 
 
