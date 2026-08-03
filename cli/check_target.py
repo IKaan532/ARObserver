@@ -7,6 +7,7 @@ from app.checks.headers import check_headers
 from app.checks.reachability import check_reachability
 from app.checks.redirect import check_https_redirect
 from app.checks.tls import check_tls
+from app.scoring import calculate_score
 
 
 async def run_checks(url: str) -> dict:
@@ -15,7 +16,7 @@ async def run_checks(url: str) -> dict:
     dns = check_dns(url)
     tls = check_tls(url)
     headers = await check_headers(url)
-    return {
+    result = {
         "url": url,
         "reachability": reachability,
         "redirect": redirect,
@@ -23,6 +24,8 @@ async def run_checks(url: str) -> dict:
         "tls": tls,
         "headers": headers,
     }
+    result["scoring"] = calculate_score(result)
+    return result
 
 
 def main() -> None:

@@ -25,3 +25,27 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+SCORE_WEIGHTS = {
+    "unreachable": 40,
+    "server_error": 20,
+    "client_error": 10,
+    "dns_unresolved": 15,
+    "tls_not_applicable": 15,
+    "tls_invalid_chain": 25,
+    "tls_expired": 25,
+    "tls_expiring_soon": 10,
+    "no_https_redirect": 10,
+    "missing_security_header": 5,
+    "version_leak": 5,
+}
+
+CERT_EXPIRY_SCORE_WARN_DAYS = 30
+
+LETTER_GRADE_THRESHOLDS = [
+    (90, "A"),
+    (80, "B"),
+    (70, "C"),
+    (60, "D"),
+    (0, "F"),
+]
