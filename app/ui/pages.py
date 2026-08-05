@@ -1,4 +1,6 @@
+import json
 from datetime import datetime, timedelta
+from urllib.parse import urlencode
 
 from nicegui import ui
 
@@ -6,6 +8,7 @@ from app import services
 from app.scheduler import is_target_running, trigger_manual_check
 from app.ui.components import (
     build_line_chart,
+    render_active_filters,
     render_alerts,
     render_content_section,
     render_status_table,
@@ -14,31 +17,93 @@ from app.ui.components import (
 )
 
 POLL_INTERVAL_SECONDS = 10.0
-GRADE_OPTIONS = ["Tümü", "A", "B", "C", "D", "F"]
+GRADE_OPTIONS = ["A", "B", "C", "D", "F"]
 
 
 @ui.page("/")
-def index_page() -> None:
+def index_page(grade: str = "", group: str = "", q: str = "") -> None:
     ui.page_title("ARObserver — Hedefler")
     ui.label("Hedefler").classes("text-h4")
 
-    state = {"grade": "Tümü", "group": "Tümü"}
+    state = {
+        "grades": [value for value in grade.split(",") if value],
+        "groups": [value for value in group.split(",") if value],
+        "query": q,
+    }
+
+    def matches(card: dict) -> bool:
+        if state["grades"] and card["letter_grade"] not in state["grades"]:
+            return False
+        if state["groups"] and not (set(card["tags"]) & set(state["groups"])):
+            return False
+        if state["query"]:
+            needle = state["query"].lower()
+            if needle not in card["name"].lower() and needle not in card["url"].lower():
+                return False
+        return True
+
+    def sync_url() -> None:
+        params = {}
+        if state["grades"]:
+            params["grade"] = ",".join(state["grades"])
+        if state["groups"]:
+            params["group"] = ",".join(state["groups"])
+        if state["query"]:
+            params["q"] = state["query"]
+        query_string = urlencode(params)
+        new_url = "/" + (f"?{query_string}" if query_string else "")
+        ui.run_javascript(f"history.replaceState(null, '', {json.dumps(new_url)})")
 
     @ui.refreshable
     def render_cards() -> None:
         cards = services.list_target_cards()
-        filtered = [
-            card
-            for card in cards
-            if (state["grade"] == "Tümü" or card["letter_grade"] == state["grade"])
-            and (state["group"] == "Tümü" or state["group"] in card["tags"])
-        ]
-        if not filtered:
-            ui.label("Gösterilecek hedef yok.")
+        filtered = [card for card in cards if matches(card)]
+
+        render_active_filters(state, remove_grade, remove_group, clear_query, clear_all)
+        ui.label(f"{len(cards)} hedeften {len(filtered)}'ü gösteriliyor").classes("text-caption text-grey")
+
+        if not cards:
+            ui.label("Henüz izlenen hedef yok. targets.yaml dosyasını kontrol edin.")
             return
+        if not filtered:
+            ui.label("Eşleşen hedef yok.")
+            return
+
         with ui.grid(columns=3).classes("w-full gap-4"):
             for card in filtered:
-                render_target_card(card, is_target_running(card["id"]), handle_check_now)
+                render_target_card(card, is_target_running(card["id"]), handle_check_now, add_group_filter)
+
+    def on_filter_change() -> None:
+        state["grades"] = list(grade_select.value or [])
+        state["groups"] = list(group_select.value or [])
+        state["query"] = search_input.value or ""
+        sync_url()
+        render_cards.refresh()
+
+    def remove_grade(value: str) -> None:
+        grade_select.set_value([v for v in grade_select.value if v != value])
+        on_filter_change()
+
+    def remove_group(value: str) -> None:
+        group_select.set_value([v for v in group_select.value if v != value])
+        on_filter_change()
+
+    def clear_query() -> None:
+        search_input.set_value("")
+        on_filter_change()
+
+    def clear_all() -> None:
+        grade_select.set_value([])
+        group_select.set_value([])
+        search_input.set_value("")
+        on_filter_change()
+
+    def add_group_filter(tag: str) -> None:
+        current = list(group_select.value or [])
+        if tag not in current:
+            current.append(tag)
+        group_select.set_value(current)
+        on_filter_change()
 
     def handle_check_now(target_id: int) -> None:
         result = trigger_manual_check(target_id)
@@ -53,16 +118,18 @@ def index_page() -> None:
             trigger_manual_check(card["id"])
         render_cards.refresh()
 
-    def on_filter_change() -> None:
-        state["grade"] = grade_select.value
-        state["group"] = group_select.value
-        render_cards.refresh()
-
     with ui.row().classes("items-center gap-4"):
-        grade_select = ui.select(GRADE_OPTIONS, value="Tümü", label="Harf Notu", on_change=lambda e: on_filter_change())
-        group_select = ui.select(
-            ["Tümü"] + services.list_groups(), value="Tümü", label="Grup", on_change=lambda e: on_filter_change()
+        grade_select = ui.select(
+            GRADE_OPTIONS, value=state["grades"], multiple=True, label="Harf Notu", on_change=lambda e: on_filter_change()
         )
+        group_select = ui.select(
+            services.list_groups(),
+            value=state["groups"],
+            multiple=True,
+            label="Grup",
+            on_change=lambda e: on_filter_change(),
+        )
+        search_input = ui.input(label="Ara (ad/url)", value=state["query"], on_change=lambda e: on_filter_change())
         ui.button("Tümünü Şimdi Kontrol Et", on_click=trigger_all)
 
     last_update_label = ui.label("son güncelleme: --:--:--").classes("text-caption text-grey")

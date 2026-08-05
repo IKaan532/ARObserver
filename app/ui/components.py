@@ -35,7 +35,9 @@ def render_check_now_button(target_id: int, running: bool, on_click: Callable[[]
     return button, spinner
 
 
-def render_target_card(card: dict, running: bool, on_check_now: Callable[[int], None]) -> None:
+def render_target_card(
+    card: dict, running: bool, on_check_now: Callable[[int], None], on_tag_click: Callable[[str], None]
+) -> None:
     with ui.card().classes("w-full"):
         with ui.row().classes("items-center justify-between w-full"):
             ui.link(card["name"], f"/targets/{card['id']}").classes("text-h6")
@@ -45,11 +47,34 @@ def render_target_card(card: dict, running: bool, on_check_now: Callable[[int], 
         else:
             ui.badge("Erişilemiyor", color="red")
         ui.label(card["url"]).classes("text-caption text-grey")
+        if card["tags"]:
+            with ui.row().classes("gap-1"):
+                for tag in card["tags"]:
+                    ui.chip(tag, on_click=lambda t=tag: on_tag_click(t)).props("dense outline")
         if card["checked_at"]:
             ui.label(f"Son kontrol: {card['checked_at']}").classes("text-caption")
         if card["cert_days_remaining"] is not None:
             ui.label(f"Sertifikaya kalan gün: {card['cert_days_remaining']}").classes("text-caption")
         render_check_now_button(card["id"], running, lambda: on_check_now(card["id"]))
+
+
+def render_active_filters(
+    state: dict,
+    on_remove_grade: Callable[[str], None],
+    on_remove_group: Callable[[str], None],
+    on_clear_query: Callable[[], None],
+    on_clear_all: Callable[[], None],
+) -> None:
+    if not (state["grades"] or state["groups"] or state["query"]):
+        return
+    with ui.row().classes("items-center gap-2 q-mb-sm"):
+        for grade in state["grades"]:
+            ui.chip(f"Not: {grade}", removable=True, on_value_change=lambda e, g=grade: on_remove_grade(g))
+        for group in state["groups"]:
+            ui.chip(f"Grup: {group}", removable=True, on_value_change=lambda e, g=group: on_remove_group(g))
+        if state["query"]:
+            ui.chip(f"Ara: {state['query']}", removable=True, on_value_change=lambda e: on_clear_query())
+        ui.button("Filtreleri Temizle", on_click=on_clear_all).props("flat dense")
 
 
 def render_alerts(open_alerts: list[dict]) -> None:
