@@ -27,24 +27,53 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-SCORING_VERSION = 2
+SCORING_VERSION = 3
 
-SCORE_WEIGHTS = {
-    "unreachable": 40,
-    "server_error": 20,
-    "client_error": 10,
-    "dns_unresolved": 15,
-    "tls_not_applicable": 15,
-    "tls_invalid_chain": 25,
-    "tls_expired": 25,
-    "tls_expiring_soon": 10,
-    "no_https_redirect": 10,
-    "missing_security_header": 8,
-    "version_leak": 5,
-    "content_critical_change": 10,
-    "tls_weak_protocol": 10,
-    "tls_no_tls13": 3,
-    "tls_weak_cipher": 5,
+SCORE_CATEGORIES = {
+    "tls_certificate": {"label": "TLS Sertifika Geçerliliği", "max_points": 25},
+    "security_headers": {"label": "Güvenlik Başlıkları", "max_points": 30},
+    "tls_protocol": {"label": "TLS Sürümü ve Şifre", "max_points": 15},
+    "https_redirect": {"label": "HTTPS Yönlendirme", "max_points": 10},
+    "content_integrity": {"label": "İçerik Bütünlüğü", "max_points": 10},
+    "info_leak": {"label": "Bilgi Sızıntısı", "max_points": 5},
+    "compression": {"label": "Sıkıştırma", "max_points": 5},
+}
+
+TLS_CERTIFICATE_RULES = {
+    "https_not_used": {"points": 25, "message": "Hedef HTTPS kullanmıyor"},
+    "invalid_chain": {"points": 15, "message": "TLS sertifika zinciri geçersiz"},
+    "expired": {"points": 25, "message": "TLS sertifikasının süresi dolmuş"},
+    "expiring_under_7_days": {"points": 15, "message": "TLS sertifikasının bitişine {days} günden az kaldı"},
+    "expiring_under_14_days": {"points": 10, "message": "TLS sertifikasının bitişine {days} günden az kaldı"},
+    "expiring_under_30_days": {"points": 5, "message": "TLS sertifikasının bitişine {days} gün kaldı"},
+}
+
+SECURITY_HEADER_RULES = {
+    "Strict-Transport-Security": {"points": 8, "message": "Strict-Transport-Security başlığı eksik"},
+    "Content-Security-Policy": {"points": 8, "message": "Content-Security-Policy başlığı eksik"},
+    "X-Content-Type-Options": {"points": 5, "message": "X-Content-Type-Options başlığı eksik"},
+    "X-Frame-Options": {"points": 5, "message": "X-Frame-Options başlığı eksik"},
+    "Referrer-Policy": {"points": 2, "message": "Referrer-Policy başlığı eksik"},
+    "Permissions-Policy": {"points": 2, "message": "Permissions-Policy başlığı eksik"},
+}
+
+TLS_PROTOCOL_RULES = {
+    "https_not_used": {"points": 15, "message": "Hedef HTTPS kullanmıyor"},
+    "weak_protocol": {"points": 10, "message": "TLS 1.0 veya 1.1 kabul ediliyor"},
+    "no_tls13": {"points": 3, "message": "TLS 1.3 desteklenmiyor"},
+    "weak_cipher": {"points": 5, "message": "Zayıf şifre takımı kullanılıyor ({cipher})"},
+}
+
+HTTPS_REDIRECT_RULES = {
+    "not_redirecting": {"points": 10, "message": "HTTP, HTTPS'e yönlendirilmiyor"},
+}
+
+CONTENT_INTEGRITY_RULES = {
+    "critical_change": {"points": 10, "message": "Sayfa başlığı veya H1 metni temel çizgiden değişti"},
+}
+
+INFO_LEAK_RULES = {
+    "version_leak": {"points": 5, "message": "{header} başlığı sürüm bilgisi sızdırıyor"},
 }
 
 CERT_EXPIRY_SCORE_WARN_DAYS = 30

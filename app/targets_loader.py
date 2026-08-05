@@ -28,6 +28,7 @@ def seed_targets_if_empty(db: Session, path: str | None = None) -> None:
                 interval_minutes=definition.get("interval_minutes", settings.default_check_interval_minutes),
                 tags=definition.get("tags", []),
                 expected_keyword=definition.get("expected_keyword"),
+                expected_status=definition.get("expected_status", 200),
             )
         )
     db.commit()

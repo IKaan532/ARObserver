@@ -1,4 +1,13 @@
-from app.config import CERT_EXPIRY_SCORE_WARN_DAYS, LETTER_GRADE_THRESHOLDS, SCORE_WEIGHTS
+from app.config import (
+    CONTENT_INTEGRITY_RULES,
+    HTTPS_REDIRECT_RULES,
+    INFO_LEAK_RULES,
+    LETTER_GRADE_THRESHOLDS,
+    SCORE_CATEGORIES,
+    SECURITY_HEADER_RULES,
+    TLS_CERTIFICATE_RULES,
+    TLS_PROTOCOL_RULES,
+)
 
 
 def letter_grade(score: int) -> str:
@@ -8,77 +17,191 @@ def letter_grade(score: int) -> str:
     return "F"
 
 
-def calculate_score(results: dict) -> dict:
-    score = 100
-    reasons = []
+def _deduction(rule: str, category: str, points: int, message: str) -> dict:
+    return {"rule": rule, "category": category, "points": points, "message": message}
 
+
+def _finalize(category: str, deductions: list[dict]) -> dict:
+    max_points = SCORE_CATEGORIES[category]["max_points"]
+    lost = min(max_points, sum(item["points"] for item in deductions))
+    return {"max": max_points, "earned": max_points - lost, "deductions": deductions}
+
+
+def evaluate_tls_certificate(tls: dict) -> dict | None:
+    if not tls:
+        return None
+    if not tls.get("applicable"):
+        rule = TLS_CERTIFICATE_RULES["https_not_used"]
+        return _finalize(
+            "tls_certificate", [_deduction("https_not_used", "tls_certificate", rule["points"], rule["message"])]
+        )
+
+    deductions = []
+    if not tls.get("chain_valid"):
+        rule = TLS_CERTIFICATE_RULES["invalid_chain"]
+        deductions.append(_deduction("invalid_chain", "tls_certificate", rule["points"], rule["message"]))
+    else:
+        days = tls.get("days_remaining")
+        if days is not None and days < 0:
+            rule = TLS_CERTIFICATE_RULES["expired"]
+            deductions.append(_deduction("expired", "tls_certificate", rule["points"], rule["message"]))
+        elif days is not None and days < 7:
+            rule = TLS_CERTIFICATE_RULES["expiring_under_7_days"]
+            deductions.append(
+                _deduction("expiring_under_7_days", "tls_certificate", rule["points"], rule["message"].format(days=days))
+            )
+        elif days is not None and days < 14:
+            rule = TLS_CERTIFICATE_RULES["expiring_under_14_days"]
+            deductions.append(
+                _deduction("expiring_under_14_days", "tls_certificate", rule["points"], rule["message"].format(days=days))
+            )
+        elif days is not None and days < 30:
+            rule = TLS_CERTIFICATE_RULES["expiring_under_30_days"]
+            deductions.append(
+                _deduction("expiring_under_30_days", "tls_certificate", rule["points"], rule["message"].format(days=days))
+            )
+
+    return _finalize("tls_certificate", deductions)
+
+
+def evaluate_security_headers(headers: dict) -> dict | None:
+    if not headers or not headers.get("reachable", False):
+        return None
+
+    security_headers = headers.get("security_headers") or {}
+    deductions = []
+    for name, rule in SECURITY_HEADER_RULES.items():
+        info = security_headers.get(name, {})
+        if not info.get("present"):
+            deductions.append(_deduction(f"missing_{name}", "security_headers", rule["points"], rule["message"]))
+
+    return _finalize("security_headers", deductions)
+
+
+def evaluate_tls_protocol(tls: dict) -> dict | None:
+    if not tls:
+        return None
+    if not tls.get("applicable"):
+        rule = TLS_PROTOCOL_RULES["https_not_used"]
+        return _finalize(
+            "tls_protocol", [_deduction("https_not_used", "tls_protocol", rule["points"], rule["message"])]
+        )
+    if tls.get("cipher_name") is None:
+        return None
+
+    deductions = []
+    if tls.get("old_protocols_supported"):
+        rule = TLS_PROTOCOL_RULES["weak_protocol"]
+        deductions.append(_deduction("weak_protocol", "tls_protocol", rule["points"], rule["message"]))
+    if tls.get("tls_1_3_supported") is False:
+        rule = TLS_PROTOCOL_RULES["no_tls13"]
+        deductions.append(_deduction("no_tls13", "tls_protocol", rule["points"], rule["message"]))
+    if tls.get("weak_cipher"):
+        rule = TLS_PROTOCOL_RULES["weak_cipher"]
+        deductions.append(
+            _deduction("weak_cipher", "tls_protocol", rule["points"], rule["message"].format(cipher=tls.get("cipher_name")))
+        )
+
+    return _finalize("tls_protocol", deductions)
+
+
+def evaluate_https_redirect(redirect: dict) -> dict | None:
+    if redirect is None:
+        return None
+    deductions = []
+    if not redirect.get("redirects_to_https"):
+        rule = HTTPS_REDIRECT_RULES["not_redirecting"]
+        deductions.append(_deduction("not_redirecting", "https_redirect", rule["points"], rule["message"]))
+    return _finalize("https_redirect", deductions)
+
+
+def evaluate_content_integrity(content: dict) -> dict | None:
+    if content is None:
+        return None
+    deductions = []
+    if content.get("critical_changed"):
+        rule = CONTENT_INTEGRITY_RULES["critical_change"]
+        deductions.append(_deduction("critical_change", "content_integrity", rule["points"], rule["message"]))
+    return _finalize("content_integrity", deductions)
+
+
+def evaluate_info_leak(headers: dict) -> dict | None:
+    if not headers or not headers.get("reachable", False):
+        return None
+
+    info_leak = headers.get("info_leak") or {}
+    deductions = []
+    for name, info in info_leak.items():
+        if info.get("reveals_version"):
+            rule = INFO_LEAK_RULES["version_leak"]
+            deductions.append(
+                _deduction("version_leak", "info_leak", rule["points"], rule["message"].format(header=name))
+            )
+            break
+
+    return _finalize("info_leak", deductions)
+
+
+def evaluate_compression(results: dict) -> dict | None:
+    if "compression" not in results:
+        return None
+    return _finalize("compression", [])
+
+
+CATEGORY_EVALUATORS = {
+    "tls_certificate": lambda results: evaluate_tls_certificate(results.get("tls") or {}),
+    "security_headers": lambda results: evaluate_security_headers(results.get("headers") or {}),
+    "tls_protocol": lambda results: evaluate_tls_protocol(results.get("tls") or {}),
+    "https_redirect": lambda results: evaluate_https_redirect(results.get("redirect")),
+    "content_integrity": lambda results: evaluate_content_integrity(results.get("content")),
+    "info_leak": lambda results: evaluate_info_leak(results.get("headers") or {}),
+    "compression": evaluate_compression,
+}
+
+
+def calculate_score(results: dict) -> dict:
     reachability = results.get("reachability") or {}
-    redirect = results.get("redirect") or {}
-    dns = results.get("dns") or {}
-    tls = results.get("tls") or {}
-    headers = results.get("headers") or {}
 
     if not reachability.get("reachable"):
-        score -= SCORE_WEIGHTS["unreachable"]
         suffix = " (zaman aşımı)" if reachability.get("timeout") else ""
-        reasons.append(f"Hedefe erişilemedi{suffix}")
-    else:
-        status_code = reachability.get("status_code") or 0
-        if status_code >= 500:
-            score -= SCORE_WEIGHTS["server_error"]
-            reasons.append(f"Sunucu hatası döndü (HTTP {status_code})")
-        elif status_code >= 400:
-            score -= SCORE_WEIGHTS["client_error"]
-            reasons.append(f"İstemci hatası döndü (HTTP {status_code})")
+        return {
+            "score": 0,
+            "letter_grade": "F",
+            "reasons": [f"Hedefe erişilemedi{suffix}"],
+            "breakdown": None,
+            "critical_reason": "unreachable",
+        }
 
-    if not dns.get("resolved"):
-        score -= SCORE_WEIGHTS["dns_unresolved"]
-        reasons.append("Alan adı çözümlenemedi")
+    status_code = reachability.get("status_code") or 0
+    if status_code >= 500:
+        return {
+            "score": 0,
+            "letter_grade": "F",
+            "reasons": [f"Sunucu hatası döndü (HTTP {status_code})"],
+            "breakdown": None,
+            "critical_reason": "server_error",
+        }
 
-    if tls.get("applicable") is False:
-        score -= SCORE_WEIGHTS["tls_not_applicable"]
-        reasons.append("Hedef HTTPS kullanmıyor")
-    elif tls.get("applicable"):
-        if not tls.get("chain_valid"):
-            score -= SCORE_WEIGHTS["tls_invalid_chain"]
-            reasons.append("TLS sertifika zinciri geçersiz")
-        else:
-            days_remaining = tls.get("days_remaining")
-            if days_remaining is not None and days_remaining < 0:
-                score -= SCORE_WEIGHTS["tls_expired"]
-                reasons.append("TLS sertifikasının süresi dolmuş")
-            elif days_remaining is not None and days_remaining <= CERT_EXPIRY_SCORE_WARN_DAYS:
-                score -= SCORE_WEIGHTS["tls_expiring_soon"]
-                reasons.append(f"TLS sertifikasının bitişine {days_remaining} gün kaldı")
+    breakdown = {}
+    reasons = []
+    earned_total = 0
+    max_total = 0
+    for category, evaluator in CATEGORY_EVALUATORS.items():
+        result = evaluator(results)
+        breakdown[category] = result
+        if result is None:
+            continue
+        earned_total += result["earned"]
+        max_total += result["max"]
+        reasons.extend(deduction["message"] for deduction in result["deductions"])
 
-        if tls.get("old_protocols_supported"):
-            score -= SCORE_WEIGHTS["tls_weak_protocol"]
-            reasons.append("TLS 1.0 veya 1.1 kabul ediliyor")
-        if tls.get("tls_1_3_supported") is False:
-            score -= SCORE_WEIGHTS["tls_no_tls13"]
-            reasons.append("TLS 1.3 desteklenmiyor")
-        if tls.get("weak_cipher"):
-            score -= SCORE_WEIGHTS["tls_weak_cipher"]
-            reasons.append(f"Zayıf şifre takımı kullanılıyor ({tls.get('cipher_name')})")
-
-    if not redirect.get("redirects_to_https"):
-        score -= SCORE_WEIGHTS["no_https_redirect"]
-        reasons.append("HTTP, HTTPS'e yönlendirilmiyor")
-
-    for name, info in (headers.get("security_headers") or {}).items():
-        if not info.get("present"):
-            score -= SCORE_WEIGHTS["missing_security_header"]
-            reasons.append(f"{name} başlığı eksik")
-
-    for name, info in (headers.get("info_leak") or {}).items():
-        if info.get("reveals_version"):
-            score -= SCORE_WEIGHTS["version_leak"]
-            reasons.append(f"{name} başlığı sürüm bilgisi sızdırıyor")
-
-    content = results.get("content") or {}
-    if content.get("critical_changed"):
-        score -= SCORE_WEIGHTS["content_critical_change"]
-        reasons.append("Sayfa başlığı veya H1 metni temel çizgiden değişti")
-
+    score = round((earned_total / max_total) * 100) if max_total else 100
     score = max(0, min(100, score))
-    return {"score": score, "letter_grade": letter_grade(score), "reasons": reasons}
+
+    return {
+        "score": score,
+        "letter_grade": letter_grade(score),
+        "reasons": reasons,
+        "breakdown": breakdown,
+        "critical_reason": None,
+    }

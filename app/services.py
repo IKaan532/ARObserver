@@ -66,6 +66,7 @@ def list_all_targets() -> list[dict]:
                 "interval_minutes": target.interval_minutes,
                 "tags": target.tags or [],
                 "expected_keyword": target.expected_keyword,
+                "expected_status": target.expected_status,
                 "active": target.active,
             }
             for target in targets
@@ -84,6 +85,7 @@ def get_editable_target(target_id: int) -> dict | None:
             "interval_minutes": target.interval_minutes,
             "tags": target.tags or [],
             "expected_keyword": target.expected_keyword,
+            "expected_status": target.expected_status,
             "active": target.active,
         }
 
@@ -103,7 +105,12 @@ def _ensure_url_unique(db, url: str, exclude_target_id: int | None = None) -> No
 
 
 def create_target(
-    name: str, url: str, interval_minutes: int, tags: list[str], expected_keyword: str | None
+    name: str,
+    url: str,
+    interval_minutes: int,
+    tags: list[str],
+    expected_keyword: str | None,
+    expected_status: int = 200,
 ) -> int:
     from app.scheduler import schedule_target, trigger_manual_check
 
@@ -116,6 +123,7 @@ def create_target(
             interval_minutes=interval_minutes,
             tags=tags,
             expected_keyword=expected_keyword or None,
+            expected_status=expected_status,
         )
         db.add(target)
         db.commit()
@@ -135,6 +143,7 @@ def update_target(
     tags: list[str],
     expected_keyword: str | None,
     active: bool,
+    expected_status: int = 200,
 ) -> None:
     from app.scheduler import schedule_target, unschedule_target
 
@@ -150,6 +159,7 @@ def update_target(
         target.interval_minutes = interval_minutes
         target.tags = tags
         target.expected_keyword = expected_keyword or None
+        target.expected_status = expected_status
         target.active = active
         db.commit()
 

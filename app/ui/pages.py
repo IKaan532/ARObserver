@@ -142,6 +142,13 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
                 label="Beklenen Anahtar Kelime (isteğe bağlı)",
                 value=(target["expected_keyword"] or "") if is_edit else "",
             ).classes("w-full")
+            status_input = ui.number(
+                label="Beklenen Durum Kodu",
+                value=target["expected_status"] if is_edit else 200,
+                min=100,
+                max=599,
+                precision=0,
+            ).classes("w-full")
             active_switch = ui.switch("Aktif", value=target["active"] if is_edit else True)
 
             def save() -> None:
@@ -155,6 +162,7 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
                             list(tags_select.value or []),
                             keyword_input.value,
                             active_switch.value,
+                            int(status_input.value),
                         )
                     else:
                         new_id = services.create_target(
@@ -163,6 +171,7 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
                             int(interval_input.value),
                             list(tags_select.value or []),
                             keyword_input.value,
+                            int(status_input.value),
                         )
                         ui.notify(f"Hedef eklendi, ilk kontrol tetiklendi (id {new_id}).", type="positive")
                 except ValueError as exc:

@@ -116,6 +116,15 @@ def _check_keyword_missing(db: Session, target: Target, latest_check: Check) -> 
     return []
 
 
+def _check_unexpected_status(db: Session, target: Target, latest_check: Check) -> list[Alert]:
+    if latest_check.status_code is None or latest_check.status_code == target.expected_status:
+        _resolve_alert(db, target.id, "unexpected_status")
+        return []
+    message = f"Beklenen durum kodu {target.expected_status}, dönen HTTP {latest_check.status_code}"
+    alert = _maybe_open_alert(db, target.id, "unexpected_status", message)
+    return [alert] if alert else []
+
+
 def _check_content_integrity(db: Session, target: Target, latest_check: Check) -> list[Alert]:
     content_result = latest_check.content_result or {}
     if content_result.get("baseline_established"):
@@ -158,6 +167,7 @@ def evaluate_rules(db: Session, target: Target, latest_check: Check) -> list[Ale
     new_alerts += _check_score_drop(db, target, previous_check, latest_check)
     new_alerts += _check_missing_headers(db, target, previous_check, latest_check)
     new_alerts += _check_keyword_missing(db, target, latest_check)
+    new_alerts += _check_unexpected_status(db, target, latest_check)
     new_alerts += _check_content_integrity(db, target, latest_check)
     return new_alerts
 
