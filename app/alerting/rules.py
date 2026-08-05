@@ -104,6 +104,17 @@ def _check_missing_headers(
     return new_alerts
 
 
+def _check_keyword_missing(db: Session, target: Target, latest_check: Check) -> list[Alert]:
+    if not target.expected_keyword:
+        return []
+    if latest_check.keyword_found is False:
+        message = f"Beklenen anahtar kelime bulunamadı: '{target.expected_keyword}'"
+        alert = _maybe_open_alert(db, target.id, "keyword_missing", message)
+        return [alert] if alert else []
+    _resolve_alert(db, target.id, "keyword_missing")
+    return []
+
+
 def evaluate_rules(db: Session, target: Target, latest_check: Check) -> list[Alert]:
     previous_check = (
         db.query(Check)
@@ -117,6 +128,7 @@ def evaluate_rules(db: Session, target: Target, latest_check: Check) -> list[Ale
     new_alerts += _check_cert_expiry(db, target, latest_check)
     new_alerts += _check_score_drop(db, target, previous_check, latest_check)
     new_alerts += _check_missing_headers(db, target, previous_check, latest_check)
+    new_alerts += _check_keyword_missing(db, target, latest_check)
     return new_alerts
 
 

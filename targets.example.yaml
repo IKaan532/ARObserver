@@ -3,3 +3,4 @@ targets:
     url: https://example.com
     interval_minutes: 5
     tags: [public, example]
+    expected_keyword: "Example Domain"

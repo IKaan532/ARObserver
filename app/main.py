@@ -5,7 +5,7 @@ from nicegui import ui
 from sqlalchemy import text
 
 from app.api import alerts, checks, targets
-from app.database import Base, engine
+from app.database import Base, engine, sync_schema
 from app import models
 from app.scheduler import start_scheduler, stop_scheduler
 import app.ui.pages  # noqa: F401 registers NiceGUI page routes
@@ -14,6 +14,7 @@ import app.ui.pages  # noqa: F401 registers NiceGUI page routes
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    sync_schema()
     start_scheduler()
     yield
     stop_scheduler()

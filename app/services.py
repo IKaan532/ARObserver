@@ -65,6 +65,8 @@ def _serialize_check(check: Check) -> dict:
         "score": check.score,
         "letter_grade": check.letter_grade,
         "score_reasons": check.score_reasons,
+        "content_changed": check.content_changed,
+        "keyword_found": check.keyword_found,
     }
 
 

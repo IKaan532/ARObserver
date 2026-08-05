@@ -24,12 +24,22 @@ def sync_targets(db: Session, path: str | None = None) -> None:
         target = existing_by_url.get(url)
         interval = definition.get("interval_minutes", settings.default_check_interval_minutes)
         tags = definition.get("tags", [])
+        expected_keyword = definition.get("expected_keyword")
         if target is None:
-            db.add(Target(name=definition["name"], url=url, interval_minutes=interval, tags=tags))
+            db.add(
+                Target(
+                    name=definition["name"],
+                    url=url,
+                    interval_minutes=interval,
+                    tags=tags,
+                    expected_keyword=expected_keyword,
+                )
+            )
         else:
             target.name = definition["name"]
             target.interval_minutes = interval
             target.tags = tags
+            target.expected_keyword = expected_keyword
 
     for url, target in existing_by_url.items():
         if url not in yaml_by_url:

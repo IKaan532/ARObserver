@@ -98,6 +98,13 @@ def render_status_table(last_check: dict | None) -> None:
         text = f"Sürüm sızdırıyor: {info.get('value')}" if info.get("reveals_version") else "Sorun yok"
         rows.append((f"{name} (sızıntı)", text))
 
+    rows.append(("İçerik", "Değişti" if last_check.get("content_changed") else "Değişmedi"))
+    keyword_found = last_check.get("keyword_found")
+    if keyword_found is None:
+        rows.append(("Anahtar Kelime", "-"))
+    else:
+        rows.append(("Anahtar Kelime", "Bulundu" if keyword_found else "Bulunamadı"))
+
     rows.append(("Skor", f"{last_check['score']} ({last_check['letter_grade']})"))
 
     with ui.column().classes("w-full gap-1"):
