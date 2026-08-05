@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-SCORING_VERSION = 1
+SCORING_VERSION = 2
 
 SCORE_WEIGHTS = {
     "unreachable": 40,
@@ -42,6 +42,9 @@ SCORE_WEIGHTS = {
     "missing_security_header": 8,
     "version_leak": 5,
     "content_critical_change": 10,
+    "tls_weak_protocol": 10,
+    "tls_no_tls13": 3,
+    "tls_weak_cipher": 5,
 }
 
 CERT_EXPIRY_SCORE_WARN_DAYS = 30

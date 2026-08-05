@@ -119,9 +119,28 @@ def render_status_table(last_check: dict | None) -> None:
     tls_result = last_check["tls_result"] or {}
     if tls_result.get("applicable"):
         tls_text = ("Geçerli" if tls_result.get("chain_valid") else "Geçersiz") + f", kalan gün: {tls_result.get('days_remaining')}"
+        rows.append(("TLS", tls_text))
+
+        old_supported = tls_result.get("old_protocols_supported")
+        if old_supported is None:
+            rows.append(("TLS 1.0 / 1.1", "Test edilemedi"))
+        else:
+            rows.append(("TLS 1.0 / 1.1", "Kabul ediliyor" if old_supported else "Reddediliyor"))
+
+        tls13 = tls_result.get("tls_1_3_supported")
+        if tls13 is None:
+            rows.append(("TLS 1.3", "Test edilemedi"))
+        else:
+            rows.append(("TLS 1.3", "Destekleniyor" if tls13 else "Desteklenmiyor"))
+
+        cipher_name = tls_result.get("cipher_name")
+        if cipher_name:
+            cipher_text = f"{cipher_name} ({tls_result.get('negotiated_protocol')})"
+            if tls_result.get("weak_cipher"):
+                cipher_text += " — zayıf"
+            rows.append(("Şifre Takımı", cipher_text))
     else:
-        tls_text = "Uygulanamıyor"
-    rows.append(("TLS", tls_text))
+        rows.append(("TLS", "Uygulanamıyor"))
 
     headers_result = last_check["headers_result"] or {}
     for name in SECURITY_HEADER_LABELS:

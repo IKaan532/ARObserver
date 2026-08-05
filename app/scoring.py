@@ -51,6 +51,16 @@ def calculate_score(results: dict) -> dict:
                 score -= SCORE_WEIGHTS["tls_expiring_soon"]
                 reasons.append(f"TLS sertifikasının bitişine {days_remaining} gün kaldı")
 
+        if tls.get("old_protocols_supported"):
+            score -= SCORE_WEIGHTS["tls_weak_protocol"]
+            reasons.append("TLS 1.0 veya 1.1 kabul ediliyor")
+        if tls.get("tls_1_3_supported") is False:
+            score -= SCORE_WEIGHTS["tls_no_tls13"]
+            reasons.append("TLS 1.3 desteklenmiyor")
+        if tls.get("weak_cipher"):
+            score -= SCORE_WEIGHTS["tls_weak_cipher"]
+            reasons.append(f"Zayıf şifre takımı kullanılıyor ({tls.get('cipher_name')})")
+
     if not redirect.get("redirects_to_https"):
         score -= SCORE_WEIGHTS["no_https_redirect"]
         reasons.append("HTTP, HTTPS'e yönlendirilmiyor")
