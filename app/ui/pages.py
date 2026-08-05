@@ -8,12 +8,14 @@ from app import services
 from app.scheduler import is_target_running, trigger_manual_check
 from app.ui.components import (
     build_line_chart,
+    build_stacked_bar_chart,
     render_active_filters,
     render_alerts,
     render_content_section,
     render_status_table,
     render_target_card,
     update_line_chart,
+    update_stacked_bar_chart,
 )
 
 POLL_INTERVAL_SECONDS = 10.0
@@ -274,6 +276,10 @@ def detail_page(target_id: int) -> None:
     response_chart = build_line_chart("Yanıt Süresi (ms)", points, "response_time_ms")
     ui.label("Skor").classes("text-h6")
     score_chart = build_line_chart("Skor", points, "score")
+    ui.label("Zaman Kırılımı").classes("text-h6")
+    timing_chart = build_stacked_bar_chart("Zaman Kırılımı (ms)", points)
+    ui.label("Sayfa Boyutu").classes("text-h6")
+    size_chart = build_line_chart("Sayfa Boyutu (KB)", points, "body_size_kb")
 
     ui.label("Son Kontrol Durumu").classes("text-h6")
     render_status_table(detail["last_check"])
@@ -317,6 +323,8 @@ def detail_page(target_id: int) -> None:
 
         update_line_chart(response_chart, points, "response_time_ms")
         update_line_chart(score_chart, points, "score")
+        update_stacked_bar_chart(timing_chart, points)
+        update_line_chart(size_chart, points, "body_size_kb")
         last_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
 
     ui.timer(POLL_INTERVAL_SECONDS, tick)

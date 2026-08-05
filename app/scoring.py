@@ -1,4 +1,5 @@
 from app.config import (
+    COMPRESSION_RULES,
     CONTENT_INTEGRITY_RULES,
     HTTPS_REDIRECT_RULES,
     INFO_LEAK_RULES,
@@ -143,9 +144,14 @@ def evaluate_info_leak(headers: dict) -> dict | None:
 
 
 def evaluate_compression(results: dict) -> dict | None:
-    if "compression" not in results:
+    compression = results.get("compression")
+    if compression is None:
         return None
-    return _finalize("compression", [])
+    deductions = []
+    if not compression.get("content_encoding"):
+        rule = COMPRESSION_RULES["no_compression"]
+        deductions.append(_deduction("no_compression", "compression", rule["points"], rule["message"]))
+    return _finalize("compression", deductions)
 
 
 CATEGORY_EVALUATORS = {

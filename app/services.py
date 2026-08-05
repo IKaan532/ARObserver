@@ -212,6 +212,7 @@ def _serialize_check(check: Check) -> dict:
         "letter_grade": check.letter_grade,
         "score_reasons": check.score_reasons,
         "content_result": check.content_result,
+        "timing_result": check.timing_result,
     }
 
 
@@ -264,12 +265,21 @@ def get_chart_points(target_id: int, since: datetime | None = None, limit: int =
     if limit and len(checks) > limit:
         checks = checks[-limit:]
 
-    return [
-        {
-            "checked_at": check.checked_at,
-            "label": local_dt(check.checked_at, "%H:%M:%S"),
-            "response_time_ms": check.response_time_ms,
-            "score": check.score,
-        }
-        for check in checks
-    ]
+    points = []
+    for check in checks:
+        timing = check.timing_result or {}
+        points.append(
+            {
+                "checked_at": check.checked_at,
+                "label": local_dt(check.checked_at, "%H:%M:%S"),
+                "response_time_ms": check.response_time_ms,
+                "score": check.score,
+                "dns_ms": timing.get("dns_ms"),
+                "tcp_ms": timing.get("tcp_ms"),
+                "tls_ms": timing.get("tls_ms"),
+                "ttfb_ms": timing.get("ttfb_ms"),
+                "download_ms": timing.get("download_ms"),
+                "body_size_kb": round(timing["body_size_bytes"] / 1024, 2) if timing.get("body_size_bytes") else None,
+            }
+        )
+    return points

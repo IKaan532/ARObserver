@@ -117,6 +117,13 @@ async def run_target_check(target_id: int) -> None:
 
     comparison = compare_fingerprint(baseline_fingerprint if not baseline_established else None, fingerprint or {})
 
+    timing = reachability.get("timing")
+    compression = (
+        {"content_encoding": timing.get("content_encoding"), "body_size_bytes": timing.get("body_size_bytes")}
+        if timing
+        else None
+    )
+
     results = {
         "reachability": reachability,
         "redirect": redirect,
@@ -124,6 +131,7 @@ async def run_target_check(target_id: int) -> None:
         "tls": tls,
         "headers": headers,
         "content": comparison,
+        "compression": compression,
     }
     scoring = calculate_score(results)
 
@@ -162,6 +170,7 @@ async def run_target_check(target_id: int) -> None:
             letter_grade=scoring["letter_grade"],
             score_reasons=scoring["reasons"],
             content_result=content_result,
+            timing_result=timing,
             scoring_version=SCORING_VERSION,
         )
         db.add(check)

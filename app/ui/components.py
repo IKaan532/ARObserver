@@ -212,3 +212,36 @@ def update_line_chart(chart: ui.echart, points: list[dict], value_key: str) -> N
     chart.options["xAxis"]["data"] = [point["label"] for point in points]
     chart.options["series"][0]["data"] = [point[value_key] for point in points]
     chart.update()
+
+
+TIMING_SERIES = [
+    ("dns_ms", "DNS"),
+    ("tcp_ms", "TCP"),
+    ("tls_ms", "TLS"),
+    ("ttfb_ms", "TTFB"),
+    ("download_ms", "İndirme"),
+]
+
+
+def build_stacked_bar_chart(title: str, points: list[dict]) -> ui.echart:
+    labels = [point["label"] for point in points]
+    options = {
+        "title": {"text": title},
+        "legend": {},
+        "xAxis": {"type": "category", "data": labels},
+        "yAxis": {"type": "value", "name": "ms"},
+        "series": [
+            {"name": name, "type": "bar", "stack": "total", "data": [point[key] for point in points]}
+            for key, name in TIMING_SERIES
+        ],
+        "animation": True,
+        "animationDuration": 400,
+    }
+    return ui.echart(options).classes("w-full h-64")
+
+
+def update_stacked_bar_chart(chart: ui.echart, points: list[dict]) -> None:
+    chart.options["xAxis"]["data"] = [point["label"] for point in points]
+    for index, (key, _name) in enumerate(TIMING_SERIES):
+        chart.options["series"][index]["data"] = [point[key] for point in points]
+    chart.update()

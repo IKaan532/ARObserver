@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-SCORING_VERSION = 3
+SCORING_VERSION = 4
 
 SCORE_CATEGORIES = {
     "tls_certificate": {"label": "TLS Sertifika Geçerliliği", "max_points": 25},
@@ -74,6 +74,10 @@ CONTENT_INTEGRITY_RULES = {
 
 INFO_LEAK_RULES = {
     "version_leak": {"points": 5, "message": "{header} başlığı sürüm bilgisi sızdırıyor"},
+}
+
+COMPRESSION_RULES = {
+    "no_compression": {"points": 5, "message": "Yanıt sıkıştırılmıyor (Content-Encoding yok)"},
 }
 
 CERT_EXPIRY_SCORE_WARN_DAYS = 30

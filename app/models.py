@@ -50,6 +50,7 @@ class Check(Base):
     score_reasons: Mapped[Optional[list[str]]] = mapped_column(JSON, default=None)
 
     content_result: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
+    timing_result: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
     scoring_version: Mapped[Optional[int]] = mapped_column(default=None)
 
     target: Mapped["Target"] = relationship(back_populates="checks")
