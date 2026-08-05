@@ -8,13 +8,13 @@ from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import desc
 
 from app.alerting.rules import evaluate_rules, notify
-from app.checks.content import check_content
+from app.checks.content import check_content, compare_fingerprint
 from app.checks.dns import check_dns
 from app.checks.headers import check_headers
 from app.checks.reachability import check_reachability
 from app.checks.redirect import check_https_redirect
 from app.checks.tls import check_tls
-from app.config import settings
+from app.config import SCORING_VERSION, settings
 from app.database import SessionLocal
 from app.models import Alert, Check, Target
 from app.scoring import calculate_score
@@ -76,10 +76,14 @@ async def run_target_check(target_id: int) -> None:
             return
         url = target.url
         expected_keyword = target.expected_keyword
-        previous_check = (
-            db.query(Check).filter(Check.target_id == target_id).order_by(desc(Check.checked_at)).first()
+        baseline_fingerprint = target.baseline_fingerprint
+        previous_content_hash = (
+            db.query(Check.content_result)
+            .filter(Check.target_id == target_id)
+            .order_by(desc(Check.checked_at))
+            .limit(1)
+            .scalar()
         )
-        previous_content_hash = previous_check.content_hash if previous_check else None
 
     reachability, redirect, headers, content = await asyncio.gather(
         check_reachability(url),
@@ -90,17 +94,42 @@ async def run_target_check(target_id: int) -> None:
     dns = await asyncio.to_thread(check_dns, url)
     tls = await asyncio.to_thread(check_tls, url)
 
-    results = {"reachability": reachability, "redirect": redirect, "dns": dns, "tls": tls, "headers": headers}
+    fingerprint = content.get("fingerprint")
+    baseline_established = False
+    if reachability.get("reachable") and fingerprint is not None and baseline_fingerprint is None:
+        baseline_fingerprint = fingerprint
+        baseline_established = True
+
+    comparison = compare_fingerprint(baseline_fingerprint if not baseline_established else None, fingerprint or {})
+
+    results = {
+        "reachability": reachability,
+        "redirect": redirect,
+        "dns": dns,
+        "tls": tls,
+        "headers": headers,
+        "content": comparison,
+    }
     scoring = calculate_score(results)
 
     cert_expiry_date = None
     if tls.get("valid_to"):
         cert_expiry_date = datetime.fromisoformat(tls["valid_to"]).replace(tzinfo=None)
 
+    previous_hash = (previous_content_hash or {}).get("content_hash") if previous_content_hash else None
     content_hash = content.get("content_hash")
-    content_changed = (
-        previous_content_hash is not None and content_hash is not None and content_hash != previous_content_hash
-    )
+    hash_changed = previous_hash is not None and content_hash is not None and content_hash != previous_hash
+
+    content_result = {
+        "content_hash": content_hash,
+        "hash_changed": hash_changed,
+        "keyword_found": content.get("keyword_found"),
+        "fingerprint": fingerprint,
+        "baseline_established": baseline_established,
+        "changes": comparison["changes"],
+        "critical_changed": comparison["critical_changed"],
+        "threshold_exceeded": comparison["threshold_exceeded"],
+    }
 
     with SessionLocal() as db:
         check = Check(
@@ -117,15 +146,18 @@ async def run_target_check(target_id: int) -> None:
             score=scoring["score"],
             letter_grade=scoring["letter_grade"],
             score_reasons=scoring["reasons"],
-            content_hash=content_hash,
-            content_changed=content_changed,
-            keyword_found=content.get("keyword_found"),
+            content_result=content_result,
+            scoring_version=SCORING_VERSION,
         )
         db.add(check)
+
+        target = db.get(Target, target_id)
+        if baseline_established:
+            target.baseline_fingerprint = fingerprint
+
         db.commit()
         db.refresh(check)
 
-        target = db.get(Target, target_id)
         new_alerts = evaluate_rules(db, target, check)
         db.commit()
 

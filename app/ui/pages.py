@@ -4,7 +4,14 @@ from nicegui import ui
 
 from app import services
 from app.scheduler import is_target_running, trigger_manual_check
-from app.ui.components import build_line_chart, render_alerts, render_status_table, render_target_card, update_line_chart
+from app.ui.components import (
+    build_line_chart,
+    render_alerts,
+    render_content_section,
+    render_status_table,
+    render_target_card,
+    update_line_chart,
+)
 
 POLL_INTERVAL_SECONDS = 10.0
 GRADE_OPTIONS = ["Tümü", "A", "B", "C", "D", "F"]
@@ -100,6 +107,15 @@ def detail_page(target_id: int) -> None:
 
     ui.label("Son Kontrol Durumu").classes("text-h6")
     render_status_table(detail["last_check"])
+
+    def handle_reset_baseline() -> None:
+        services.reset_baseline(target_id)
+        trigger_manual_check(target_id)
+        ui.notify("Temel çizgi sıfırlandı, yeni kontrol tetiklendi.", type="info")
+
+    render_content_section(
+        detail["last_check"]["content_result"] if detail["last_check"] else None, handle_reset_baseline
+    )
 
     def handle_check_now() -> None:
         result = trigger_manual_check(target_id)

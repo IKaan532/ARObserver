@@ -16,6 +16,7 @@ class Target(Base):
     interval_minutes: Mapped[int] = mapped_column(default=5)
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     expected_keyword: Mapped[Optional[str]] = mapped_column(String(200), default=None)
+    baseline_fingerprint: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -46,9 +47,8 @@ class Check(Base):
     letter_grade: Mapped[Optional[str]] = mapped_column(String(1), default=None)
     score_reasons: Mapped[Optional[list[str]]] = mapped_column(JSON, default=None)
 
-    content_hash: Mapped[Optional[str]] = mapped_column(String(64), default=None)
-    content_changed: Mapped[Optional[bool]] = mapped_column(default=False)
-    keyword_found: Mapped[Optional[bool]] = mapped_column(default=None)
+    content_result: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
+    scoring_version: Mapped[Optional[int]] = mapped_column(default=None)
 
     target: Mapped["Target"] = relationship(back_populates="checks")
 

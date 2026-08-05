@@ -107,12 +107,41 @@ def _check_missing_headers(
 def _check_keyword_missing(db: Session, target: Target, latest_check: Check) -> list[Alert]:
     if not target.expected_keyword:
         return []
-    if latest_check.keyword_found is False:
+    content_result = latest_check.content_result or {}
+    if content_result.get("keyword_found") is False:
         message = f"Beklenen anahtar kelime bulunamadı: '{target.expected_keyword}'"
         alert = _maybe_open_alert(db, target.id, "keyword_missing", message)
         return [alert] if alert else []
     _resolve_alert(db, target.id, "keyword_missing")
     return []
+
+
+def _check_content_integrity(db: Session, target: Target, latest_check: Check) -> list[Alert]:
+    content_result = latest_check.content_result or {}
+    if content_result.get("baseline_established"):
+        return []
+
+    new_alerts = []
+    changes = content_result.get("changes") or []
+
+    if content_result.get("critical_changed"):
+        message = "Yapısal temel çizgiden kritik değişiklik: " + "; ".join(
+            change for change in changes if change.startswith(("Sayfa başlığı", "H1 metni"))
+        )
+        alert = Alert(target_id=target.id, alert_type="content_critical_change", message=message, resolved_at=datetime.utcnow())
+        db.add(alert)
+        new_alerts.append(alert)
+
+    threshold_exceeded = content_result.get("threshold_exceeded") or []
+    if threshold_exceeded:
+        message = "Yapısal eşik aşımı: " + "; ".join(
+            change for change in changes if not change.startswith(("Sayfa başlığı", "H1 metni", "Meta description"))
+        )
+        alert = Alert(target_id=target.id, alert_type="content_threshold_change", message=message, resolved_at=datetime.utcnow())
+        db.add(alert)
+        new_alerts.append(alert)
+
+    return new_alerts
 
 
 def evaluate_rules(db: Session, target: Target, latest_check: Check) -> list[Alert]:
@@ -129,6 +158,7 @@ def evaluate_rules(db: Session, target: Target, latest_check: Check) -> list[Ale
     new_alerts += _check_score_drop(db, target, previous_check, latest_check)
     new_alerts += _check_missing_headers(db, target, previous_check, latest_check)
     new_alerts += _check_keyword_missing(db, target, latest_check)
+    new_alerts += _check_content_integrity(db, target, latest_check)
     return new_alerts
 
 

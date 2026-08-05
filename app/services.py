@@ -65,9 +65,17 @@ def _serialize_check(check: Check) -> dict:
         "score": check.score,
         "letter_grade": check.letter_grade,
         "score_reasons": check.score_reasons,
-        "content_changed": check.content_changed,
-        "keyword_found": check.keyword_found,
+        "content_result": check.content_result,
     }
+
+
+def reset_baseline(target_id: int) -> None:
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None:
+            return
+        target.baseline_fingerprint = None
+        db.commit()
 
 
 def get_target_detail(target_id: int) -> dict | None:

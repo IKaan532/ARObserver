@@ -27,6 +27,8 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
+SCORING_VERSION = 1
+
 SCORE_WEIGHTS = {
     "unreachable": 40,
     "server_error": 20,
@@ -39,6 +41,7 @@ SCORE_WEIGHTS = {
     "no_https_redirect": 10,
     "missing_security_header": 8,
     "version_leak": 5,
+    "content_critical_change": 10,
 }
 
 CERT_EXPIRY_SCORE_WARN_DAYS = 30

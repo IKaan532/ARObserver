@@ -98,13 +98,6 @@ def render_status_table(last_check: dict | None) -> None:
         text = f"Sürüm sızdırıyor: {info.get('value')}" if info.get("reveals_version") else "Sorun yok"
         rows.append((f"{name} (sızıntı)", text))
 
-    rows.append(("İçerik", "Değişti" if last_check.get("content_changed") else "Değişmedi"))
-    keyword_found = last_check.get("keyword_found")
-    if keyword_found is None:
-        rows.append(("Anahtar Kelime", "-"))
-    else:
-        rows.append(("Anahtar Kelime", "Bulundu" if keyword_found else "Bulunamadı"))
-
     rows.append(("Skor", f"{last_check['score']} ({last_check['letter_grade']})"))
 
     with ui.column().classes("w-full gap-1"):
@@ -117,6 +110,36 @@ def render_status_table(last_check: dict | None) -> None:
         ui.label("Skor Gerekçeleri").classes("text-h6 q-mt-md")
         for reason in last_check["score_reasons"]:
             ui.label(f"- {reason}")
+
+
+def render_content_section(content_result: dict | None, on_reset: Callable[[], None]) -> None:
+    ui.label("İçerik Bütünlüğü").classes("text-h6 q-mt-md")
+
+    if content_result is None:
+        ui.label("Henüz kontrol verisi yok.")
+        return
+
+    keyword_found = content_result.get("keyword_found")
+    if keyword_found is None:
+        ui.label("Anahtar kelime: Tanımlanmadı").classes("text-caption text-grey")
+    else:
+        ui.label(f"Anahtar kelime: {'Bulundu' if keyword_found else 'Bulunamadı'}")
+
+    ui.label(
+        f"İçerik özeti (bilgi amaçlı): {'Değişti' if content_result.get('hash_changed') else 'Değişmedi'}"
+    ).classes("text-caption text-grey")
+
+    if content_result.get("baseline_established"):
+        ui.label("Yapısal temel çizgi bu kontrolde oluşturuldu.").classes("text-caption text-grey")
+    else:
+        changes = content_result.get("changes") or []
+        if changes:
+            for change in changes:
+                ui.label(f"- {change}")
+        else:
+            ui.label("Yapısal değişiklik yok.").classes("text-caption text-grey")
+
+    ui.button("Yeni Durumu Temel Al", on_click=on_reset).props("outline")
 
 
 def build_line_chart(title: str, points: list[dict], value_key: str) -> ui.echart:

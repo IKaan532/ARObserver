@@ -65,5 +65,10 @@ def calculate_score(results: dict) -> dict:
             score -= SCORE_WEIGHTS["version_leak"]
             reasons.append(f"{name} başlığı sürüm bilgisi sızdırıyor")
 
+    content = results.get("content") or {}
+    if content.get("critical_changed"):
+        score -= SCORE_WEIGHTS["content_critical_change"]
+        reasons.append("Sayfa başlığı veya H1 metni temel çizgiden değişti")
+
     score = max(0, min(100, score))
     return {"score": score, "letter_grade": letter_grade(score), "reasons": reasons}
