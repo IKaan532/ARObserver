@@ -41,3 +41,8 @@ def sync_schema() -> None:
             for column in missing_columns:
                 column_type = column.type.compile(dialect=engine.dialect)
                 connection.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {column_type}'))
+                if column.default is not None and column.default.is_scalar:
+                    connection.execute(
+                        text(f'UPDATE "{table.name}" SET "{column.name}" = :value WHERE "{column.name}" IS NULL'),
+                        {"value": column.default.arg},
+                    )

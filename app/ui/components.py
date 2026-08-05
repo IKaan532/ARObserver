@@ -36,13 +36,21 @@ def render_check_now_button(target_id: int, running: bool, on_click: Callable[[]
 
 
 def render_target_card(
-    card: dict, running: bool, on_check_now: Callable[[int], None], on_tag_click: Callable[[str], None]
+    card: dict,
+    running: bool,
+    on_check_now: Callable[[int], None],
+    on_tag_click: Callable[[str], None],
+    on_edit: Callable[[int], None],
 ) -> None:
     with ui.card().classes("w-full"):
         with ui.row().classes("items-center justify-between w-full"):
             ui.link(card["name"], f"/targets/{card['id']}").classes("text-h6")
-            _grade_badge(card["letter_grade"])
-        if card["status_code"]:
+            with ui.row().classes("items-center gap-1"):
+                ui.button(icon="edit", on_click=lambda: on_edit(card["id"])).props("flat dense round")
+                _grade_badge(card["letter_grade"])
+        if not card["active"]:
+            ui.badge("Pasif", color="grey")
+        elif card["status_code"]:
             ui.badge(f"HTTP {card['status_code']}", color="green")
         else:
             ui.badge("Erişilemiyor", color="red")

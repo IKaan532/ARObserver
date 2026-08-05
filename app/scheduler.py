@@ -18,16 +18,14 @@ from app.config import SCORING_VERSION, settings
 from app.database import SessionLocal
 from app.models import Alert, Check, Target
 from app.scoring import calculate_score
-from app.targets_loader import sync_targets
+from app.targets_loader import seed_targets_if_empty
 
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
 TARGET_JOB_PREFIX = "check-target-"
-RELOAD_JOB_ID = "reload-targets"
 RETENTION_JOB_ID = "cleanup-retention"
-RELOAD_INTERVAL_SECONDS = 60
 RETENTION_INTERVAL_HOURS = 24
 MANUAL_TRIGGER_COOLDOWN_SECONDS = 30
 
@@ -67,6 +65,23 @@ def trigger_manual_check(target_id: int) -> str:
 
 def _target_job_id(target_id: int) -> str:
     return f"{TARGET_JOB_PREFIX}{target_id}"
+
+
+def schedule_target(target_id: int, interval_minutes: int, run_immediately: bool = True) -> None:
+    job_id = _target_job_id(target_id)
+    trigger = IntervalTrigger(minutes=interval_minutes)
+    existing_job = scheduler.get_job(job_id)
+    if existing_job is None:
+        kwargs = {"next_run_time": datetime.now()} if run_immediately else {}
+        scheduler.add_job(run_target_check, trigger=trigger, args=[target_id], id=job_id, **kwargs)
+    else:
+        scheduler.reschedule_job(job_id, trigger=trigger)
+
+
+def unschedule_target(target_id: int) -> None:
+    job_id = _target_job_id(target_id)
+    if scheduler.get_job(job_id) is not None:
+        scheduler.remove_job(job_id)
 
 
 async def run_target_check(target_id: int) -> None:
@@ -166,29 +181,6 @@ async def run_target_check(target_id: int) -> None:
     logger.info("target %s checked: score=%s grade=%s", url, scoring["score"], scoring["letter_grade"])
 
 
-def reload_targets() -> None:
-    with SessionLocal() as db:
-        sync_targets(db)
-        target_data = [(target.id, target.interval_minutes) for target in db.query(Target).all()]
-
-    current_ids = {job.id for job in scheduler.get_jobs() if job.id.startswith(TARGET_JOB_PREFIX)}
-    desired_ids = {_target_job_id(target_id) for target_id, _ in target_data}
-
-    for job_id in current_ids - desired_ids:
-        scheduler.remove_job(job_id)
-
-    for target_id, interval_minutes in target_data:
-        job_id = _target_job_id(target_id)
-        trigger = IntervalTrigger(minutes=interval_minutes)
-        existing_job = scheduler.get_job(job_id)
-        if existing_job is None:
-            scheduler.add_job(
-                run_target_check, trigger=trigger, args=[target_id], id=job_id, next_run_time=datetime.now()
-            )
-        elif existing_job.trigger.interval != trigger.interval:
-            scheduler.reschedule_job(job_id, trigger=trigger)
-
-
 def cleanup_old_records() -> None:
     cutoff = datetime.utcnow() - timedelta(days=settings.retention_days)
     with SessionLocal() as db:
@@ -198,8 +190,15 @@ def cleanup_old_records() -> None:
 
 
 def start_scheduler() -> None:
-    reload_targets()
-    scheduler.add_job(reload_targets, trigger=IntervalTrigger(seconds=RELOAD_INTERVAL_SECONDS), id=RELOAD_JOB_ID)
+    with SessionLocal() as db:
+        seed_targets_if_empty(db)
+        active_targets = [
+            (target.id, target.interval_minutes) for target in db.query(Target).filter(Target.active.is_(True)).all()
+        ]
+
+    for target_id, interval_minutes in active_targets:
+        schedule_target(target_id, interval_minutes)
+
     scheduler.add_job(
         cleanup_old_records, trigger=IntervalTrigger(hours=RETENTION_INTERVAL_HOURS), id=RETENTION_JOB_ID
     )

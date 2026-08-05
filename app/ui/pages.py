@@ -71,7 +71,9 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
 
         with ui.grid(columns=3).classes("w-full gap-4"):
             for card in filtered:
-                render_target_card(card, is_target_running(card["id"]), handle_check_now, add_group_filter)
+                render_target_card(
+                    card, is_target_running(card["id"]), handle_check_now, add_group_filter, open_edit_dialog
+                )
 
     def on_filter_change() -> None:
         state["grades"] = list(grade_select.value or [])
@@ -118,6 +120,97 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
             trigger_manual_check(card["id"])
         render_cards.refresh()
 
+    def open_target_dialog(target: dict | None) -> None:
+        is_edit = target is not None
+
+        with ui.dialog() as dialog, ui.card().classes("w-96"):
+            ui.label("Hedefi Düzenle" if is_edit else "Yeni Hedef").classes("text-h6")
+            name_input = ui.input(label="Ad", value=target["name"] if is_edit else "").classes("w-full")
+            url_input = ui.input(label="URL", value=target["url"] if is_edit else "").classes("w-full")
+            interval_input = ui.number(
+                label="Kontrol Aralığı (dk)", value=target["interval_minutes"] if is_edit else 5, min=1, precision=0
+            ).classes("w-full")
+            tags_select = ui.select(
+                services.list_groups(),
+                value=list(target["tags"]) if is_edit else [],
+                multiple=True,
+                new_value_mode="add-unique",
+                with_input=True,
+                label="Grup/Etiket",
+            ).classes("w-full")
+            keyword_input = ui.input(
+                label="Beklenen Anahtar Kelime (isteğe bağlı)",
+                value=(target["expected_keyword"] or "") if is_edit else "",
+            ).classes("w-full")
+            active_switch = ui.switch("Aktif", value=target["active"] if is_edit else True)
+
+            def save() -> None:
+                try:
+                    if is_edit:
+                        services.update_target(
+                            target["id"],
+                            name_input.value,
+                            url_input.value,
+                            int(interval_input.value),
+                            list(tags_select.value or []),
+                            keyword_input.value,
+                            active_switch.value,
+                        )
+                    else:
+                        new_id = services.create_target(
+                            name_input.value,
+                            url_input.value,
+                            int(interval_input.value),
+                            list(tags_select.value or []),
+                            keyword_input.value,
+                        )
+                        ui.notify(f"Hedef eklendi, ilk kontrol tetiklendi (id {new_id}).", type="positive")
+                except ValueError as exc:
+                    ui.notify(str(exc), type="negative")
+                    return
+                dialog.close()
+                render_cards.refresh()
+                if is_edit:
+                    ui.notify("Kaydedildi.", type="positive")
+
+            def confirm_delete() -> None:
+                with ui.dialog() as confirm, ui.card():
+                    ui.label(f"'{target['name']}' silinsin mi? Geçmiş kayıtları da silinecek.")
+                    with ui.row().classes("w-full justify-end gap-2"):
+                        ui.button("Vazgeç", on_click=confirm.close).props("flat")
+
+                        def do_delete() -> None:
+                            services.delete_target(target["id"])
+                            confirm.close()
+                            dialog.close()
+                            render_cards.refresh()
+                            ui.notify("Hedef silindi.", type="info")
+
+                        ui.button("Sil", on_click=do_delete, color="red")
+                confirm.open()
+
+            def handle_reset() -> None:
+                services.reset_baseline(target["id"])
+                trigger_manual_check(target["id"])
+                ui.notify("Temel çizgi sıfırlandı, yeni kontrol tetiklendi.", type="info")
+
+            with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                if is_edit:
+                    ui.button("Yeni Durumu Temel Al", on_click=handle_reset).props("flat")
+                    ui.button("Sil", on_click=confirm_delete, color="red").props("flat")
+                ui.button("Vazgeç", on_click=dialog.close).props("flat")
+                ui.button("Kaydet", on_click=save)
+
+        dialog.open()
+
+    def open_edit_dialog(target_id: int) -> None:
+        target = services.get_editable_target(target_id)
+        if target is not None:
+            open_target_dialog(target)
+
+    def open_create_dialog() -> None:
+        open_target_dialog(None)
+
     with ui.row().classes("items-center gap-4"):
         grade_select = ui.select(
             GRADE_OPTIONS, value=state["grades"], multiple=True, label="Harf Notu", on_change=lambda e: on_filter_change()
@@ -131,6 +224,7 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
         )
         search_input = ui.input(label="Ara (ad/url)", value=state["query"], on_change=lambda e: on_filter_change())
         ui.button("Tümünü Şimdi Kontrol Et", on_click=trigger_all)
+        ui.button("+ Yeni Hedef", on_click=open_create_dialog)
 
     last_update_label = ui.label("son güncelleme: --:--:--").classes("text-caption text-grey")
 

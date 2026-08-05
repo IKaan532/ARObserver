@@ -6,8 +6,8 @@ skorlayan ve bir panelde gösteren izleme servisi.
 
 ## Kurulum (Docker Compose)
 
-1. `targets.example.yaml` dosyasını `targets.yaml` olarak kopyalayıp izlenecek
-   hedefleri girin.
+1. `targets.example.yaml` dosyasını `targets.yaml` olarak kopyalayıp ilk
+   kurulumda izlenecek hedefleri girin (isteğe bağlı — panelden de eklenebilir).
 2. `.env.example` dosyasını `.env` olarak kopyalayıp gerekirse ayarları
    düzenleyin.
 3. Ayağa kaldırın:
@@ -18,9 +18,16 @@ skorlayan ve bir panelde gösteren izleme servisi.
 
 4. Panel: http://localhost:8000
 
-Kontrol kayıtları (`./data`) ve hedef listesi (`targets.yaml`) konteynerin
-dışında, proje klasöründe kalıcı olarak saklanır; konteyner yeniden
-oluşturulduğunda veri kaybolmaz.
+Kontrol kayıtları (`./data`) konteynerin dışında, proje klasöründe kalıcı
+olarak saklanır; konteyner yeniden oluşturulduğunda veri kaybolmaz.
+
+### Hedef yönetimi
+
+`targets.yaml` yalnızca veritabanı tamamen boşken (ilk kurulum) bir kerelik
+okunur. Ondan sonra tek gerçek kaynak veritabanıdır — hedefler panelden
+("+ Yeni Hedef" / kart üzerindeki düzenle simgesi) eklenir, düzenlenir, silinir
+veya pasife alınır. `targets.yaml`'ı sonradan değiştirmek hiçbir etki
+yapmaz; dosya sadece ilk boot'ta referans alınır.
 
 ## Ortam Değişkenleri
 

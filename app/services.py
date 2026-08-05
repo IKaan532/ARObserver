@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import desc
@@ -44,6 +45,7 @@ def list_target_cards() -> list[dict]:
                     "name": target.name,
                     "url": target.url,
                     "tags": target.tags or [],
+                    "active": target.active,
                     "letter_grade": last_check.letter_grade if last_check else None,
                     "status_code": last_check.status_code if last_check else None,
                     "checked_at": local_dt(last_check.checked_at) if last_check else None,
@@ -51,6 +53,140 @@ def list_target_cards() -> list[dict]:
                 }
             )
         return cards
+
+
+def list_all_targets() -> list[dict]:
+    with SessionLocal() as db:
+        targets = db.query(Target).order_by(Target.name).all()
+        return [
+            {
+                "id": target.id,
+                "name": target.name,
+                "url": target.url,
+                "interval_minutes": target.interval_minutes,
+                "tags": target.tags or [],
+                "expected_keyword": target.expected_keyword,
+                "active": target.active,
+            }
+            for target in targets
+        ]
+
+
+def get_editable_target(target_id: int) -> dict | None:
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None:
+            return None
+        return {
+            "id": target.id,
+            "name": target.name,
+            "url": target.url,
+            "interval_minutes": target.interval_minutes,
+            "tags": target.tags or [],
+            "expected_keyword": target.expected_keyword,
+            "active": target.active,
+        }
+
+
+def _validate_url(url: str) -> None:
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError("Geçersiz url — http:// veya https:// ile başlamalı")
+
+
+def _ensure_url_unique(db, url: str, exclude_target_id: int | None = None) -> None:
+    query = db.query(Target).filter(Target.url == url)
+    if exclude_target_id is not None:
+        query = query.filter(Target.id != exclude_target_id)
+    if query.first() is not None:
+        raise ValueError("Bu url zaten izleniyor")
+
+
+def create_target(
+    name: str, url: str, interval_minutes: int, tags: list[str], expected_keyword: str | None
+) -> int:
+    from app.scheduler import schedule_target, trigger_manual_check
+
+    _validate_url(url)
+    with SessionLocal() as db:
+        _ensure_url_unique(db, url)
+        target = Target(
+            name=name,
+            url=url,
+            interval_minutes=interval_minutes,
+            tags=tags,
+            expected_keyword=expected_keyword or None,
+        )
+        db.add(target)
+        db.commit()
+        db.refresh(target)
+        target_id = target.id
+
+    schedule_target(target_id, interval_minutes, run_immediately=False)
+    trigger_manual_check(target_id)
+    return target_id
+
+
+def update_target(
+    target_id: int,
+    name: str,
+    url: str,
+    interval_minutes: int,
+    tags: list[str],
+    expected_keyword: str | None,
+    active: bool,
+) -> None:
+    from app.scheduler import schedule_target, unschedule_target
+
+    _validate_url(url)
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None:
+            return
+        _ensure_url_unique(db, url, exclude_target_id=target_id)
+        was_active = target.active
+        target.name = name
+        target.url = url
+        target.interval_minutes = interval_minutes
+        target.tags = tags
+        target.expected_keyword = expected_keyword or None
+        target.active = active
+        db.commit()
+
+    if active:
+        schedule_target(target_id, interval_minutes)
+    elif was_active:
+        unschedule_target(target_id)
+
+
+def set_target_active(target_id: int, active: bool) -> None:
+    from app.scheduler import schedule_target, unschedule_target
+
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None:
+            return
+        target.active = active
+        interval_minutes = target.interval_minutes
+        db.commit()
+
+    if active:
+        schedule_target(target_id, interval_minutes)
+    else:
+        unschedule_target(target_id)
+
+
+def delete_target(target_id: int) -> None:
+    from app.scheduler import unschedule_target
+
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None:
+            return
+        db.delete(target)
+        db.commit()
+
+    unschedule_target(target_id)
 
 
 def _serialize_check(check: Check) -> dict:

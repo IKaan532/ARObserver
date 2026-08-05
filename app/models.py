@@ -16,6 +16,7 @@ class Target(Base):
     interval_minutes: Mapped[int] = mapped_column(default=5)
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     expected_keyword: Mapped[Optional[str]] = mapped_column(String(200), default=None)
+    active: Mapped[bool] = mapped_column(default=True)
     baseline_fingerprint: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
