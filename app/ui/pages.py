@@ -237,13 +237,15 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
         ui.button("Tümünü Şimdi Kontrol Et", on_click=trigger_all)
         ui.button("+ Yeni Hedef", on_click=open_create_dialog)
 
-    last_update_label = ui.label("son güncelleme: --:--:--").classes("text-caption text-grey")
+    last_update_label = ui.label("").classes("text-caption text-grey")
+    last_update_label.set_visibility(False)
 
     render_cards()
 
     def tick() -> None:
         render_cards.refresh()
         last_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
+        last_update_label.set_visibility(True)
 
     ui.timer(POLL_INTERVAL_SECONDS, tick)
 
@@ -267,19 +269,20 @@ def detail_page(target_id: int) -> None:
         spinner = ui.spinner(size="1.5em")
         spinner.set_visibility(is_target_running(target_id))
 
-    last_update_label = ui.label("son güncelleme: --:--:--").classes("text-caption text-grey")
+    last_update_label = ui.label("").classes("text-caption text-grey")
+    last_update_label.set_visibility(False)
 
     window_start = datetime.utcnow() - timedelta(minutes=services.CHART_WINDOW_MINUTES)
     points = services.get_chart_points(target_id)
 
     ui.label("Yanıt Süresi (ms)").classes("text-h6")
-    response_chart = build_line_chart("Yanıt Süresi (ms)", points, "response_time_ms")
+    response_chart = build_line_chart(points, "response_time_ms")
     ui.label("Skor").classes("text-h6")
-    score_chart = build_line_chart("Skor", points, "score")
+    score_chart = build_line_chart(points, "score")
     ui.label("Zaman Kırılımı").classes("text-h6")
-    timing_chart = build_stacked_bar_chart("Zaman Kırılımı (ms)", points)
+    timing_chart = build_stacked_bar_chart(points)
     ui.label("Sayfa Boyutu").classes("text-h6")
-    size_chart = build_line_chart("Sayfa Boyutu (KB)", points, "body_size_kb")
+    size_chart = build_line_chart(points, "body_size_kb")
 
     ui.label("Son Kontrol Durumu").classes("text-h6")
     render_status_table(detail["last_check"])
@@ -326,5 +329,6 @@ def detail_page(target_id: int) -> None:
         update_stacked_bar_chart(timing_chart, points)
         update_line_chart(size_chart, points, "body_size_kb")
         last_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
+        last_update_label.set_visibility(True)
 
     ui.timer(POLL_INTERVAL_SECONDS, tick)

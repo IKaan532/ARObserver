@@ -56,19 +56,51 @@ def _check_unreachable(db: Session, target: Target, latest_check: Check) -> list
     return []
 
 
+CERT_EXPIRY_ALERT_TYPE = "cert_expiry"
+LEGACY_CERT_EXPIRY_PREFIX = "cert_expiry_"
+
+
+def _cert_expiry_level(threshold: int, sorted_thresholds: list[int]) -> str:
+    if threshold == sorted_thresholds[0]:
+        return "KRİTİK"
+    if threshold == sorted_thresholds[-1]:
+        return "UYARI"
+    return "DİKKAT"
+
+
 def _check_cert_expiry(db: Session, target: Target, latest_check: Check) -> list[Alert]:
     days_remaining = (latest_check.tls_result or {}).get("days_remaining")
-    new_alerts = []
-    for threshold in settings.cert_expiry_warn_days_list:
-        alert_type = f"cert_expiry_{threshold}"
-        if days_remaining is not None and days_remaining <= threshold:
-            message = f"TLS sertifikasının bitişine {days_remaining} gün kaldı"
-            alert = _maybe_open_alert(db, target.id, alert_type, message)
-            if alert:
-                new_alerts.append(alert)
-        else:
-            _resolve_alert(db, target.id, alert_type)
-    return new_alerts
+    sorted_thresholds = sorted(settings.cert_expiry_warn_days_list)
+    breached = [t for t in sorted_thresholds if days_remaining is not None and days_remaining <= t]
+
+    if not breached:
+        _resolve_alert(db, target.id, CERT_EXPIRY_ALERT_TYPE)
+        return []
+
+    threshold = min(breached)
+    level = _cert_expiry_level(threshold, sorted_thresholds)
+    message = f"[{level}] TLS sertifikasının bitişine {days_remaining} gün kaldı (eşik: {threshold} gün)"
+
+    existing = _open_alert_query(db, target.id, CERT_EXPIRY_ALERT_TYPE).first()
+    if existing is not None:
+        existing.message = message
+        return []
+
+    alert = Alert(target_id=target.id, alert_type=CERT_EXPIRY_ALERT_TYPE, message=message)
+    db.add(alert)
+    return [alert]
+
+
+def cleanup_legacy_cert_expiry_alerts(db: Session) -> None:
+    legacy_alerts = (
+        db.query(Alert)
+        .filter(Alert.alert_type.like(f"{LEGACY_CERT_EXPIRY_PREFIX}%"), Alert.resolved_at.is_(None))
+        .all()
+    )
+    for alert in legacy_alerts:
+        alert.resolved_at = datetime.utcnow()
+    if legacy_alerts:
+        db.commit()
 
 
 def _check_score_drop(db: Session, target: Target, previous_check: Check | None, latest_check: Check) -> list[Alert]:

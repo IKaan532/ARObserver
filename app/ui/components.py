@@ -11,6 +11,8 @@ GRADE_COLORS = {
 }
 GRADE_COLOR_NONE = "grey"
 
+VALUE_TRUNCATE_LENGTH = 120
+
 SECURITY_HEADER_LABELS = {
     "Strict-Transport-Security": "Strict-Transport-Security",
     "Content-Security-Policy": "Content-Security-Policy",
@@ -95,6 +97,22 @@ def render_alerts(open_alerts: list[dict]) -> None:
             ui.label(f"({alert['created_at']})").classes("text-caption text-grey")
 
 
+def _copy_to_clipboard(value: str) -> None:
+    ui.clipboard.write(value)
+    ui.notify("Kopyalandı.", type="info")
+
+
+def _render_value_cell(value: str) -> None:
+    if len(value) <= VALUE_TRUNCATE_LENGTH:
+        ui.label(value)
+        return
+    truncated = value[:VALUE_TRUNCATE_LENGTH] + "…"
+    with ui.expansion(truncated).classes("w-full"):
+        with ui.row().classes("items-center gap-2 w-full"):
+            ui.label(value).classes("text-caption").style("word-break: break-all")
+            ui.button(icon="content_copy", on_click=lambda: _copy_to_clipboard(value)).props("flat dense round size=sm")
+
+
 def render_status_table(last_check: dict | None) -> None:
     if last_check is None:
         ui.label("Henüz kontrol verisi yok.")
@@ -154,9 +172,9 @@ def render_status_table(last_check: dict | None) -> None:
 
     with ui.column().classes("w-full gap-1"):
         for label, value in rows:
-            with ui.row().classes("w-full justify-between border-b"):
+            with ui.row().classes("w-full justify-between items-center border-b"):
                 ui.label(label).classes("text-weight-medium")
-                ui.label(value)
+                _render_value_cell(str(value))
 
     if last_check.get("score_reasons"):
         ui.label("Skor Gerekçeleri").classes("text-h6 q-mt-md")
@@ -194,11 +212,10 @@ def render_content_section(content_result: dict | None, on_reset: Callable[[], N
     ui.button("Yeni Durumu Temel Al", on_click=on_reset).props("outline")
 
 
-def build_line_chart(title: str, points: list[dict], value_key: str) -> ui.echart:
+def build_line_chart(points: list[dict], value_key: str) -> ui.echart:
     labels = [point["label"] for point in points]
     values = [point[value_key] for point in points]
     options = {
-        "title": {"text": title},
         "xAxis": {"type": "category", "data": labels},
         "yAxis": {"type": "value"},
         "series": [{"type": "line", "data": values, "showSymbol": False}],
@@ -223,10 +240,9 @@ TIMING_SERIES = [
 ]
 
 
-def build_stacked_bar_chart(title: str, points: list[dict]) -> ui.echart:
+def build_stacked_bar_chart(points: list[dict]) -> ui.echart:
     labels = [point["label"] for point in points]
     options = {
-        "title": {"text": title},
         "legend": {},
         "xAxis": {"type": "category", "data": labels},
         "yAxis": {"type": "value", "name": "ms"},

@@ -7,7 +7,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from sqlalchemy import desc
 
-from app.alerting.rules import evaluate_rules, notify
+from app.alerting.rules import cleanup_legacy_cert_expiry_alerts, evaluate_rules, notify
 from app.checks.content import check_content, compare_fingerprint
 from app.checks.dns import check_dns
 from app.checks.headers import check_headers
@@ -201,6 +201,7 @@ def cleanup_old_records() -> None:
 def start_scheduler() -> None:
     with SessionLocal() as db:
         seed_targets_if_empty(db)
+        cleanup_legacy_cert_expiry_alerts(db)
         active_targets = [
             (target.id, target.interval_minutes) for target in db.query(Target).filter(Target.active.is_(True)).all()
         ]
