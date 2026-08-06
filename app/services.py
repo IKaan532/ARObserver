@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 from sqlalchemy import desc
 
+from app.checks.headers import SECURITY_HEADERS
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Alert, Check, Target
@@ -313,6 +314,53 @@ def get_rankings() -> dict:
     )[:RANKING_LIMIT]
 
     return {"lowest_grade": lowest_grade, "slowest": slowest}
+
+
+def get_header_matrix() -> dict:
+    with SessionLocal() as db:
+        targets = db.query(Target).order_by(Target.name).all()
+        rows = []
+        for target in targets:
+            last_check = (
+                db.query(Check).filter(Check.target_id == target.id).order_by(desc(Check.checked_at)).first()
+            )
+            security_headers = (last_check.headers_result or {}).get("security_headers") if last_check else None
+            row = {"id": target.id, "name": target.name}
+            for header in SECURITY_HEADERS:
+                if security_headers is None:
+                    row[header] = None
+                else:
+                    row[header] = security_headers.get(header, {}).get("present", False)
+            rows.append(row)
+    return {"headers": SECURITY_HEADERS, "rows": rows}
+
+
+def get_certificate_calendar() -> list[dict]:
+    with SessionLocal() as db:
+        targets = db.query(Target).order_by(Target.name).all()
+        entries = []
+        for target in targets:
+            last_check = (
+                db.query(Check).filter(Check.target_id == target.id).order_by(desc(Check.checked_at)).first()
+            )
+            if last_check is None:
+                continue
+            tls_result = last_check.tls_result or {}
+            days_remaining = tls_result.get("days_remaining")
+            if not tls_result.get("applicable") or days_remaining is None:
+                continue
+            entries.append(
+                {
+                    "id": target.id,
+                    "name": target.name,
+                    "days_remaining": days_remaining,
+                    "expiry_date": local_dt(last_check.cert_expiry_date, "%d.%m.%Y")
+                    if last_check.cert_expiry_date
+                    else None,
+                }
+            )
+    entries.sort(key=lambda entry: entry["days_remaining"])
+    return entries
 
 
 def get_uptime_stats(target_id: int) -> dict:

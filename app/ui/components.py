@@ -204,6 +204,38 @@ def render_rankings(rankings: dict) -> None:
                     ui.label(f"{entry['response_time_ms']:.0f} ms").classes("text-caption text-grey")
 
 
+def render_header_matrix(matrix: dict) -> None:
+    columns = [{"name": "target", "label": "Hedef", "field": "target", "align": "left"}] + [
+        {"name": header, "label": SECURITY_HEADER_LABELS.get(header, header), "field": header, "align": "center"}
+        for header in matrix["headers"]
+    ]
+    rows = []
+    for row in matrix["rows"]:
+        table_row = {"target": row["name"]}
+        for header in matrix["headers"]:
+            value = row[header]
+            table_row[header] = "Var" if value else ("Yok" if value is False else "-")
+        rows.append(table_row)
+    ui.table(columns=columns, rows=rows, row_key="target").classes("w-full")
+
+
+def render_certificate_calendar(entries: list[dict]) -> None:
+    if not entries:
+        ui.label("Sertifika verisi olan hedef yok.").classes("text-caption text-grey")
+        return
+    with ui.column().classes("w-full gap-1"):
+        for entry in entries:
+            if entry["days_remaining"] < 7:
+                row_classes = "w-full justify-between items-center border-b bg-red-1"
+            elif entry["days_remaining"] < 30:
+                row_classes = "w-full justify-between items-center border-b bg-orange-1"
+            else:
+                row_classes = "w-full justify-between items-center border-b"
+            with ui.row().classes(row_classes):
+                ui.link(entry["name"], f"/targets/{entry['id']}")
+                ui.label(f"{entry['expiry_date']} — kalan gün: {entry['days_remaining']}").classes("text-caption")
+
+
 def render_alerts(open_alerts: list[dict]) -> None:
     if not open_alerts:
         return

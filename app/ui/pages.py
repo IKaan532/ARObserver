@@ -12,8 +12,10 @@ from app.ui.components import (
     render_active_filters,
     render_alerts,
     render_content_section,
+    render_certificate_calendar,
     render_downtime_incidents,
     render_grade_distribution,
+    render_header_matrix,
     render_overview_summary,
     render_rankings,
     render_status_table,
@@ -56,6 +58,24 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
                 render_rankings(services.get_rankings())
 
             render_rankings_section()
+
+    with ui.row().classes("w-full gap-8 items-start"):
+        with ui.column().classes("gap-1 flex-grow"):
+            ui.label("Güvenlik Başlığı Matrisi").classes("text-subtitle1")
+
+            @ui.refreshable
+            def render_header_matrix_section() -> None:
+                render_header_matrix(services.get_header_matrix())
+
+            render_header_matrix_section()
+        with ui.column().classes("gap-1"):
+            ui.label("Sertifika Takvimi").classes("text-subtitle1")
+
+            @ui.refreshable
+            def render_certificate_calendar_section() -> None:
+                render_certificate_calendar(services.get_certificate_calendar())
+
+            render_certificate_calendar_section()
 
     state = {
         "grades": [value for value in grade.split(",") if value],
@@ -277,6 +297,8 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
         render_overview.refresh()
         render_distribution.refresh()
         render_rankings_section.refresh()
+        render_header_matrix_section.refresh()
+        render_certificate_calendar_section.refresh()
         last_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
         last_update_label.set_visibility(True)
 
