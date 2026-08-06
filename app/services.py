@@ -7,6 +7,9 @@ from sqlalchemy import desc
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Alert, Check, Target
+from app.scoring import letter_grade
+
+RANKING_LIMIT = 5
 
 CHART_WINDOW_MINUTES = 15
 MAX_CHART_POINTS = 50
@@ -252,6 +255,64 @@ def get_target_detail(target_id: int) -> dict | None:
                 for alert in open_alerts
             ],
         }
+
+
+def get_overview_summary() -> dict:
+    with SessionLocal() as db:
+        targets = db.query(Target).all()
+        last_checks = {}
+        for target in targets:
+            last_checks[target.id] = (
+                db.query(Check).filter(Check.target_id == target.id).order_by(desc(Check.checked_at)).first()
+            )
+        open_alerts_count = db.query(Alert).filter(Alert.resolved_at.is_(None)).count()
+
+    scored = [last_checks[t.id] for t in targets if last_checks[t.id] is not None and last_checks[t.id].score is not None]
+    healthy_count = sum(1 for check in last_checks.values() if check is not None and check.status_code is not None)
+    average_score = round(sum(check.score for check in scored) / len(scored), 1) if scored else None
+
+    distribution = {"A": 0, "B": 0, "C": 0, "D": 0, "F": 0}
+    for check in last_checks.values():
+        if check is not None and check.letter_grade in distribution:
+            distribution[check.letter_grade] += 1
+
+    return {
+        "total_targets": len(targets),
+        "healthy_count": healthy_count,
+        "open_alerts_count": open_alerts_count,
+        "average_score": average_score,
+        "average_grade": letter_grade(round(average_score)) if average_score is not None else None,
+        "grade_distribution": distribution,
+    }
+
+
+def get_rankings() -> dict:
+    with SessionLocal() as db:
+        targets = db.query(Target).all()
+        entries = []
+        for target in targets:
+            last_check = (
+                db.query(Check).filter(Check.target_id == target.id).order_by(desc(Check.checked_at)).first()
+            )
+            if last_check is not None:
+                entries.append((target, last_check))
+
+    lowest_grade = sorted(
+        ({"id": t.id, "name": t.name, "score": c.score, "letter_grade": c.letter_grade} for t, c in entries if c.score is not None),
+        key=lambda entry: entry["score"],
+    )[:RANKING_LIMIT]
+
+    slowest = sorted(
+        (
+            {"id": t.id, "name": t.name, "response_time_ms": c.response_time_ms}
+            for t, c in entries
+            if c.response_time_ms is not None
+        ),
+        key=lambda entry: entry["response_time_ms"],
+        reverse=True,
+    )[:RANKING_LIMIT]
+
+    return {"lowest_grade": lowest_grade, "slowest": slowest}
 
 
 def get_uptime_stats(target_id: int) -> dict:

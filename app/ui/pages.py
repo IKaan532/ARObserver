@@ -13,6 +13,9 @@ from app.ui.components import (
     render_alerts,
     render_content_section,
     render_downtime_incidents,
+    render_grade_distribution,
+    render_overview_summary,
+    render_rankings,
     render_status_table,
     render_target_card,
     render_uptime_summary,
@@ -29,6 +32,30 @@ GRADE_OPTIONS = ["A", "B", "C", "D", "F"]
 def index_page(grade: str = "", group: str = "", q: str = "") -> None:
     ui.page_title("ARObserver — Hedefler")
     ui.label("Hedefler").classes("text-h4")
+
+    @ui.refreshable
+    def render_overview() -> None:
+        render_overview_summary(services.get_overview_summary())
+
+    render_overview()
+
+    with ui.row().classes("w-full gap-8 items-start"):
+        with ui.column().classes("gap-1"):
+            ui.label("Harf Notu Dağılımı").classes("text-subtitle1")
+
+            @ui.refreshable
+            def render_distribution() -> None:
+                render_grade_distribution(services.get_overview_summary()["grade_distribution"])
+
+            render_distribution()
+        with ui.column().classes("gap-1 flex-grow"):
+            ui.label("Sıralamalar").classes("text-subtitle1")
+
+            @ui.refreshable
+            def render_rankings_section() -> None:
+                render_rankings(services.get_rankings())
+
+            render_rankings_section()
 
     state = {
         "grades": [value for value in grade.split(",") if value],
@@ -247,6 +274,9 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
 
     def tick() -> None:
         render_cards.refresh()
+        render_overview.refresh()
+        render_distribution.refresh()
+        render_rankings_section.refresh()
         last_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
         last_update_label.set_visibility(True)
 

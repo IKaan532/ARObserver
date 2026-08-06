@@ -11,6 +11,14 @@ GRADE_COLORS = {
 }
 GRADE_COLOR_NONE = "grey"
 
+GRADE_HEX_COLORS = {
+    "A": "#4caf50",
+    "B": "#8bc34a",
+    "C": "#ff9800",
+    "D": "#ff5722",
+    "F": "#f44336",
+}
+
 VALUE_TRUNCATE_LENGTH = 120
 
 SECURITY_HEADER_LABELS = {
@@ -135,6 +143,65 @@ def render_downtime_incidents(incidents: list[dict]) -> None:
             else:
                 text = f"{incident['start']} → {incident['end']} ({incident['duration_minutes']} dk)"
             ui.label(text).classes("text-caption")
+
+
+def render_overview_summary(summary: dict) -> None:
+    with ui.row().classes("items-center gap-6"):
+        with ui.row().classes("items-center gap-2"):
+            ui.label("Toplam Hedef:").classes("text-caption text-grey")
+            ui.label(str(summary["total_targets"])).classes("text-h6")
+        with ui.row().classes("items-center gap-2"):
+            ui.label("Sağlıklı:").classes("text-caption text-grey")
+            ui.label(f"{summary['healthy_count']} / {summary['total_targets']}").classes("text-h6")
+        with ui.row().classes("items-center gap-2"):
+            ui.label("Açık Uyarı:").classes("text-caption text-grey")
+            color = "red" if summary["open_alerts_count"] else GRADE_COLOR_NONE
+            ui.badge(str(summary["open_alerts_count"]), color=color).classes("text-body1 q-pa-sm")
+        with ui.row().classes("items-center gap-2"):
+            ui.label("Ortalama Not:").classes("text-caption text-grey")
+            if summary["average_score"] is None:
+                ui.label("Veri yok").classes("text-h6")
+            else:
+                ui.label(f"{summary['average_score']}").classes("text-h6")
+                _grade_badge(summary["average_grade"])
+
+
+def render_grade_distribution(distribution: dict) -> ui.echart:
+    data = [{"name": grade, "value": count, "itemStyle": {"color": GRADE_HEX_COLORS[grade]}} for grade, count in distribution.items()]
+    options = {
+        "tooltip": {"trigger": "item"},
+        "legend": {"bottom": 0},
+        "series": [
+            {
+                "type": "pie",
+                "radius": ["40%", "70%"],
+                "avoidLabelOverlap": True,
+                "data": data,
+            }
+        ],
+    }
+    return ui.echart(options).classes("w-full h-64")
+
+
+def render_rankings(rankings: dict) -> None:
+    with ui.row().classes("w-full gap-8"):
+        with ui.column().classes("gap-1"):
+            ui.label("En Düşük Notlu 5").classes("text-subtitle1")
+            if not rankings["lowest_grade"]:
+                ui.label("Yeterli veri yok.").classes("text-caption text-grey")
+            for entry in rankings["lowest_grade"]:
+                with ui.row().classes("items-center gap-2"):
+                    _grade_badge(entry["letter_grade"])
+                    ui.link(entry["name"], f"/targets/{entry['id']}")
+                    ui.label(f"({entry['score']})").classes("text-caption text-grey")
+        with ui.column().classes("gap-1"):
+            ui.label("En Yavaş 5").classes("text-subtitle1")
+            if not rankings["slowest"]:
+                ui.label("Yeterli veri yok.").classes("text-caption text-grey")
+            for entry in rankings["slowest"]:
+                with ui.row().classes("items-center gap-2"):
+                    ui.link(entry["name"], f"/targets/{entry['id']}")
+                    ui.label(f"{entry['response_time_ms']:.0f} ms").classes("text-caption text-grey")
 
 
 def render_alerts(open_alerts: list[dict]) -> None:
