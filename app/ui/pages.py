@@ -14,6 +14,7 @@ from app.ui.components import (
     render_content_section,
     render_certificate_calendar,
     render_downtime_incidents,
+    render_event_feed,
     render_grade_distribution,
     render_header_matrix,
     render_overview_summary,
@@ -35,6 +36,17 @@ GRADE_OPTIONS = ["A", "B", "C", "D", "F"]
 @ui.page("/")
 def index_page(grade: str = "", group: str = "", q: str = "") -> None:
     ui.page_title("ARObserver — Hedefler")
+    ui.add_head_html(
+        """
+        <style>
+        @keyframes ar-event-slide-in {
+            from { transform: translateY(-12px); opacity: 0; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .ar-event-row { animation: ar-event-slide-in 0.35s ease-out; }
+        </style>
+        """
+    )
     ui.label("Hedefler").classes("text-h4")
 
     @ui.refreshable
@@ -86,6 +98,15 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
         render_score_heatmap(services.get_score_heatmap())
 
     render_score_heatmap_section()
+
+    ui.label("Canlı Olay Akışı").classes("text-subtitle1")
+
+    @ui.refreshable
+    def render_event_feed_section() -> None:
+        render_event_feed(services.get_event_feed())
+
+    with ui.scroll_area().classes("w-full h-96 border rounded"):
+        render_event_feed_section()
 
     state = {
         "grades": [value for value in grade.split(",") if value],
@@ -310,6 +331,7 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
         render_header_matrix_section.refresh()
         render_certificate_calendar_section.refresh()
         render_score_heatmap_section.refresh()
+        render_event_feed_section.refresh()
         last_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
         last_update_label.set_visibility(True)
 

@@ -249,10 +249,12 @@ def render_response_time_percentiles(stats: dict) -> None:
 
 
 def render_score_heatmap(heatmap: dict) -> ui.echart:
-    height = max(220, 36 * len(heatmap["targets"]) + 80)
+    grid_top = 20
+    grid_bottom = 90
+    height = max(260, 36 * len(heatmap["targets"]) + grid_top + grid_bottom)
     options = {
         "tooltip": {"position": "top"},
-        "grid": {"height": "70%", "top": "10%"},
+        "grid": {"top": grid_top, "bottom": grid_bottom, "left": 120, "right": 20},
         "xAxis": {"type": "category", "data": heatmap["days"], "splitArea": {"show": True}},
         "yAxis": {"type": "category", "data": heatmap["targets"], "splitArea": {"show": True}},
         "visualMap": {
@@ -261,12 +263,33 @@ def render_score_heatmap(heatmap: dict) -> ui.echart:
             "calculable": True,
             "orient": "horizontal",
             "left": "center",
-            "bottom": "0%",
+            "bottom": 8,
             "inRange": {"color": ["#f44336", "#ff9800", "#4caf50"]},
         },
         "series": [{"type": "heatmap", "data": heatmap["data"], "label": {"show": False}}],
     }
     return ui.echart(options).classes("w-full").style(f"height: {height}px")
+
+
+EVENT_TYPE_COLORS = {
+    "target_added": "#2196f3",
+    "alert_opened": "#f44336",
+    "alert_resolved": "#4caf50",
+}
+
+
+def render_event_feed(events: list[dict]) -> None:
+    if not events:
+        ui.label("Henüz olay yok.").classes("text-caption text-grey")
+        return
+    with ui.column().classes("w-full gap-2"):
+        for event in events:
+            color = EVENT_TYPE_COLORS.get(event["type"], GRADE_COLOR_NONE)
+            with ui.row().classes("ar-event-row items-start gap-2 w-full"):
+                ui.element("div").classes("w-2 h-2 rounded-full q-mt-sm").style(f"background-color: {color}; flex-shrink: 0")
+                with ui.column().classes("gap-0"):
+                    ui.label(event["text"]).classes("text-body2")
+                    ui.label(event["timestamp"]).classes("text-caption text-grey")
 
 
 def render_alerts(open_alerts: list[dict]) -> None:

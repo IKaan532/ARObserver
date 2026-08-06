@@ -18,6 +18,7 @@ UPTIME_TIMELINE_DAYS = 30
 DOWNTIME_INCIDENT_LIMIT = 20
 RESPONSE_TIME_PERCENTILE_DAYS = 7
 SCORE_HEATMAP_DAYS = 30
+EVENT_FEED_LIMIT = 50
 
 _display_tz = ZoneInfo(settings.display_timezone)
 
@@ -258,6 +259,29 @@ def get_target_detail(target_id: int) -> dict | None:
                 for alert in open_alerts
             ],
         }
+
+
+def get_event_feed(limit: int = EVENT_FEED_LIMIT) -> list[dict]:
+    with SessionLocal() as db:
+        targets = db.query(Target).all()
+        alerts = db.query(Alert).all()
+
+    target_names = {target.id: target.name for target in targets}
+
+    events = []
+    for target in targets:
+        events.append((target.created_at, "target_added", f"Hedef eklendi: {target.name}"))
+    for alert in alerts:
+        name = target_names.get(alert.target_id, "?")
+        events.append((alert.created_at, "alert_opened", f"[{alert.alert_type}] {name}: {alert.message}"))
+        if alert.resolved_at is not None:
+            events.append((alert.resolved_at, "alert_resolved", f"[{alert.alert_type}] {name}: uyarı kapandı"))
+
+    events.sort(key=lambda item: item[0], reverse=True)
+    return [
+        {"timestamp": local_dt(timestamp, "%d.%m.%Y %H:%M:%S"), "type": kind, "text": text}
+        for timestamp, kind, text in events[:limit]
+    ]
 
 
 def get_overview_summary() -> dict:
