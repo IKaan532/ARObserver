@@ -9,3 +9,7 @@ services:
       - ./data:/app/data
       - ./targets.yaml:/app/targets.yaml:ro
     restart: unless-stopped
+
+  deepcheck:
+    build: ./deepcheck
+    restart: unless-stopped

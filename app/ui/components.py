@@ -292,6 +292,85 @@ def render_event_feed(events: list[dict]) -> None:
                     ui.label(event["timestamp"]).classes("text-caption text-grey")
 
 
+DEEP_CHECK_SEVERITY_COLORS = {"high": "red", "medium": "orange", "low": "grey"}
+
+
+def render_deep_check_result(data: dict | None) -> None:
+    if data is None:
+        ui.label("En son çalıştırma: hiç çalıştırılmadı").classes("text-caption text-grey")
+        return
+
+    ui.label(f"En son çalıştırma: {data['checked_at']}").classes("text-caption text-grey")
+    result = data["result"]
+
+    if result.get("error"):
+        ui.label(f"Hata: {result['error']}").classes("text-caption text-red")
+        return
+
+    findings = result.get("findings") or []
+    if not findings:
+        ui.label("Belirgin bir bulgu yok.").classes("text-caption text-grey")
+    else:
+        with ui.column().classes("w-full gap-1 q-mt-sm"):
+            for finding in findings:
+                color = DEEP_CHECK_SEVERITY_COLORS.get(finding["severity"], GRADE_COLOR_NONE)
+                with ui.row().classes("items-start gap-2"):
+                    ui.badge(finding["severity"].upper(), color=color).classes("q-mt-xs")
+                    ui.label(finding["message"])
+
+    metrics = result.get("metrics") or {}
+    with ui.row().classes("gap-6 q-mt-sm"):
+        ui.label(f"Toplam istek: {metrics.get('requests_total', '-')}").classes("text-caption text-grey")
+        bytes_total = metrics.get("bytes_total")
+        size_text = f"{round(bytes_total / 1024, 1)} KB" if bytes_total is not None else "-"
+        ui.label(f"Toplam boyut: {size_text}").classes("text-caption text-grey")
+        dcl_ms = metrics.get("dom_content_loaded_ms")
+        dcl_text = f"{dcl_ms:.0f} ms" if dcl_ms is not None else "-"
+        ui.label(f"DOMContentLoaded: {dcl_text}").classes("text-caption text-grey")
+        load_ms = metrics.get("load_ms")
+        load_text = f"{load_ms:.0f} ms" if load_ms is not None else "-"
+        ui.label(f"Load: {load_text}").classes("text-caption text-grey")
+
+    third_party = result.get("third_party_domains") or []
+    with ui.expansion(f"Üçüncü Taraf Alan Adları ({len(third_party)})").classes("w-full q-mt-sm"):
+        if not third_party:
+            ui.label("Dış alan adından kaynak yüklenmedi.").classes("text-caption text-grey")
+        for entry in sorted(third_party, key=lambda e: e["bytes"], reverse=True):
+            tag = " — izleyici/analitik" if entry.get("is_tracker") else ""
+            size_kb = round(entry["bytes"] / 1024, 1)
+            ui.label(f"{entry['domain']}: {entry['request_count']} istek, {size_kb} KB{tag}").classes("text-caption")
+
+    console = result.get("console") or {}
+    own_console = console.get("own_domain") or []
+    third_console = console.get("third_party") or []
+    with ui.expansion(f"Konsol Mesajları (kendi: {len(own_console)}, dış: {len(third_console)})").classes("w-full q-mt-sm"):
+        if not own_console and not third_console:
+            ui.label("Konsol mesajı yok.").classes("text-caption text-grey")
+        for group_label, messages in (("Kendi alan adı", own_console), ("Dış alan adları", third_console)):
+            if not messages:
+                continue
+            ui.label(group_label).classes("text-caption text-weight-medium")
+            for msg in messages:
+                count_text = f" (x{msg['count']})" if msg.get("count", 1) > 1 else ""
+                source = msg.get("source") or "-"
+                ui.label(f"[{msg['level']}] {msg['message']}{count_text} — {source}").classes("text-caption")
+
+    cookies = result.get("cookies") or []
+    with ui.expansion(f"Çerezler ({len(cookies)})").classes("w-full q-mt-sm"):
+        if not cookies:
+            ui.label("Çerez kurulmadı.").classes("text-caption text-grey")
+        for cookie in cookies:
+            flags = []
+            if not cookie.get("secure"):
+                flags.append("Secure yok")
+            if not cookie.get("http_only"):
+                flags.append("HttpOnly yok")
+            if cookie.get("same_site") in (None, "None"):
+                flags.append("SameSite=None")
+            flags_text = ", ".join(flags) if flags else "Tüm bayraklar mevcut"
+            ui.label(f"{cookie['name']} ({cookie['domain']}): {flags_text}").classes("text-caption")
+
+
 def render_alerts(open_alerts: list[dict]) -> None:
     if not open_alerts:
         return

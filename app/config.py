@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     default_check_interval_minutes: int = 5
     alert_fail_threshold: int = 3
     cert_expiry_warn_days: str = "30,14,7"
+    deepcheck_service_url: str = "http://deepcheck:8001"
 
     smtp_host: str = ""
     smtp_port: int = 587
@@ -81,6 +82,29 @@ COMPRESSION_RULES = {
 }
 
 CERT_EXPIRY_SCORE_WARN_DAYS = 30
+
+KNOWN_TRACKER_DOMAINS = [
+    "google-analytics.com",
+    "googletagmanager.com",
+    "doubleclick.net",
+    "googlesyndication.com",
+    "googleadservices.com",
+    "facebook.net",
+    "connect.facebook.net",
+    "hotjar.com",
+    "clarity.ms",
+    "sentry.io",
+    "cloudflareinsights.com",
+    "criteo.com",
+    "adnxs.com",
+    "scorecardresearch.com",
+    "mixpanel.com",
+    "segment.io",
+    "amplitude.com",
+    "yandex.ru",
+    "matomo.cloud",
+    "hs-analytics.net",
+]
 
 LETTER_GRADE_THRESHOLDS = [
     (90, "A"),

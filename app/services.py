@@ -1,14 +1,18 @@
+import asyncio
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import desc
 
+from app.checks import deep_check
 from app.checks.headers import SECURITY_HEADERS
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Alert, Check, Target
 from app.scoring import letter_grade
+
+_deep_check_running: set[int] = set()
 
 RANKING_LIMIT = 5
 
@@ -232,6 +236,58 @@ def reset_baseline(target_id: int) -> None:
             return
         target.baseline_fingerprint = None
         db.commit()
+
+
+async def check_deep_check_service_available() -> tuple[bool, str | None]:
+    return await deep_check.check_service_available()
+
+
+def is_deep_check_running(target_id: int) -> bool:
+    return target_id in _deep_check_running
+
+
+async def _run_deep_check_task(target_id: int) -> None:
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None:
+            return
+        url = target.url
+
+    result = await deep_check.run_deep_check(url)
+
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None:
+            return
+        target.deep_check_result = result
+        target.deep_check_at = datetime.utcnow()
+        db.commit()
+
+
+def trigger_deep_check(target_id: int) -> str:
+    if is_deep_check_running(target_id):
+        return "running"
+    _deep_check_running.add(target_id)
+
+    async def runner() -> None:
+        try:
+            await _run_deep_check_task(target_id)
+        finally:
+            _deep_check_running.discard(target_id)
+
+    asyncio.create_task(runner())
+    return "started"
+
+
+def get_deep_check_result(target_id: int) -> dict | None:
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None or target.deep_check_result is None:
+            return None
+        return {
+            "result": target.deep_check_result,
+            "checked_at": local_dt(target.deep_check_at) if target.deep_check_at else None,
+        }
 
 
 def get_target_detail(target_id: int) -> dict | None:

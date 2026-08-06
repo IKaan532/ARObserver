@@ -11,8 +11,9 @@ from app.ui.components import (
     build_stacked_bar_chart,
     render_active_filters,
     render_alerts,
-    render_content_section,
     render_certificate_calendar,
+    render_content_section,
+    render_deep_check_result,
     render_downtime_incidents,
     render_event_feed,
     render_grade_distribution,
@@ -339,7 +340,7 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
 
 
 @ui.page("/targets/{target_id}")
-def detail_page(target_id: int) -> None:
+async def detail_page(target_id: int) -> None:
     detail = services.get_target_detail(target_id)
     if detail is None:
         ui.label("Hedef bulunamadı").classes("text-h5")
@@ -401,6 +402,55 @@ def detail_page(target_id: int) -> None:
     render_content_section(
         detail["last_check"]["content_result"] if detail["last_check"] else None, handle_reset_baseline
     )
+
+    ui.label("Derin Kontrol").classes("text-h6")
+
+    deep_available, deep_unavailable_reason = await services.check_deep_check_service_available()
+    deep_running_initial = services.is_deep_check_running(target_id)
+
+    with ui.row().classes("items-center gap-2"):
+        deep_check_button = ui.button("Derin Kontrol")
+        deep_spinner = ui.spinner(size="1.5em")
+        deep_spinner.set_visibility(deep_running_initial)
+    deep_check_button.set_enabled(deep_available and not deep_running_initial)
+    if not deep_available:
+        ui.label(deep_unavailable_reason or "Derin kontrol servisi şu anda erişilemiyor.").classes(
+            "text-caption text-orange"
+        )
+
+    @ui.refreshable
+    def render_deep_check_section() -> None:
+        render_deep_check_result(services.get_deep_check_result(target_id))
+
+    render_deep_check_section()
+
+    deep_was_running = {"value": deep_running_initial}
+
+    def handle_deep_check() -> None:
+        result = services.trigger_deep_check(target_id)
+        if result == "running":
+            ui.notify("Derin kontrol zaten çalışıyor.", type="info")
+            return
+        deep_was_running["value"] = True
+        deep_check_button.set_enabled(False)
+        deep_spinner.set_visibility(True)
+        ui.notify("Derin kontrol başlatıldı, 10-30 sn sürebilir.", type="info")
+
+    deep_check_button.on_click(handle_deep_check)
+
+    def deep_check_tick() -> None:
+        running = services.is_deep_check_running(target_id)
+        if running:
+            deep_was_running["value"] = True
+            return
+        if deep_was_running["value"]:
+            deep_was_running["value"] = False
+            deep_spinner.set_visibility(False)
+            deep_check_button.set_enabled(deep_available)
+            render_deep_check_section.refresh()
+            ui.notify("Derin kontrol tamamlandı.", type="positive")
+
+    ui.timer(2.0, deep_check_tick)
 
     def handle_check_now() -> None:
         result = trigger_manual_check(target_id)

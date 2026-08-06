@@ -19,6 +19,8 @@ class Target(Base):
     expected_status: Mapped[int] = mapped_column(default=200)
     active: Mapped[bool] = mapped_column(default=True)
     baseline_fingerprint: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
+    deep_check_result: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
+    deep_check_at: Mapped[Optional[datetime]] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
 
