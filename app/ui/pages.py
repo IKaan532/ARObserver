@@ -18,6 +18,8 @@ from app.ui.components import (
     render_header_matrix,
     render_overview_summary,
     render_rankings,
+    render_response_time_percentiles,
+    render_score_heatmap,
     render_status_table,
     render_target_card,
     render_uptime_summary,
@@ -76,6 +78,14 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
                 render_certificate_calendar(services.get_certificate_calendar())
 
             render_certificate_calendar_section()
+
+    ui.label("Skor Isı Haritası (30 gün)").classes("text-subtitle1")
+
+    @ui.refreshable
+    def render_score_heatmap_section() -> None:
+        render_score_heatmap(services.get_score_heatmap())
+
+    render_score_heatmap_section()
 
     state = {
         "grades": [value for value in grade.split(",") if value],
@@ -299,6 +309,7 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
         render_rankings_section.refresh()
         render_header_matrix_section.refresh()
         render_certificate_calendar_section.refresh()
+        render_score_heatmap_section.refresh()
         last_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
         last_update_label.set_visibility(True)
 
@@ -336,6 +347,14 @@ def detail_page(target_id: int) -> None:
         render_downtime_incidents(services.get_downtime_incidents(target_id))
 
     render_uptime_section()
+
+    ui.label("Yanıt Süresi Yüzdelikleri (7 gün)").classes("text-h6")
+
+    @ui.refreshable
+    def render_percentiles_section() -> None:
+        render_response_time_percentiles(services.get_response_time_percentiles(target_id))
+
+    render_percentiles_section()
 
     window_start = datetime.utcnow() - timedelta(minutes=services.CHART_WINDOW_MINUTES)
     points = services.get_chart_points(target_id)
@@ -377,6 +396,7 @@ def detail_page(target_id: int) -> None:
         spinner.set_visibility(running)
         check_button.set_enabled(not running)
         render_uptime_section.refresh()
+        render_percentiles_section.refresh()
 
         since = points[-1]["checked_at"] if points else window_start
         new_points = services.get_chart_points(target_id, since=since)

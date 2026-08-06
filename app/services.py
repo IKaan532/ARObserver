@@ -16,6 +16,8 @@ CHART_WINDOW_MINUTES = 15
 MAX_CHART_POINTS = 50
 UPTIME_TIMELINE_DAYS = 30
 DOWNTIME_INCIDENT_LIMIT = 20
+RESPONSE_TIME_PERCENTILE_DAYS = 7
+SCORE_HEATMAP_DAYS = 30
 
 _display_tz = ZoneInfo(settings.display_timezone)
 
@@ -361,6 +363,76 @@ def get_certificate_calendar() -> list[dict]:
             )
     entries.sort(key=lambda entry: entry["days_remaining"])
     return entries
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    if len(sorted_values) == 1:
+        return round(sorted_values[0], 1)
+    rank = (len(sorted_values) - 1) * (pct / 100)
+    lower_index = int(rank)
+    upper_index = min(lower_index + 1, len(sorted_values) - 1)
+    if lower_index == upper_index:
+        return round(sorted_values[lower_index], 1)
+    lower_weight = upper_index - rank
+    upper_weight = rank - lower_index
+    return round(sorted_values[lower_index] * lower_weight + sorted_values[upper_index] * upper_weight, 1)
+
+
+def get_response_time_percentiles(target_id: int, days: int = RESPONSE_TIME_PERCENTILE_DAYS) -> dict:
+    since = datetime.utcnow() - timedelta(days=days)
+    with SessionLocal() as db:
+        rows = (
+            db.query(Check.response_time_ms)
+            .filter(Check.target_id == target_id, Check.checked_at >= since, Check.response_time_ms.isnot(None))
+            .all()
+        )
+    values = sorted(value for (value,) in rows)
+    if not values:
+        return {"p50": None, "p95": None, "p99": None, "sample_size": 0}
+    return {
+        "p50": _percentile(values, 50),
+        "p95": _percentile(values, 95),
+        "p99": _percentile(values, 99),
+        "sample_size": len(values),
+    }
+
+
+def get_score_heatmap(days: int = SCORE_HEATMAP_DAYS) -> dict:
+    today_local = datetime.now(_display_tz).date()
+    start_date = today_local - timedelta(days=days - 1)
+    window_start_utc = (
+        datetime.combine(start_date, datetime.min.time())
+        .replace(tzinfo=_display_tz)
+        .astimezone(ZoneInfo("UTC"))
+        .replace(tzinfo=None)
+    )
+
+    with SessionLocal() as db:
+        targets = db.query(Target).order_by(Target.name).all()
+        rows = (
+            db.query(Check.target_id, Check.checked_at, Check.score)
+            .filter(Check.checked_at >= window_start_utc, Check.score.isnot(None))
+            .all()
+        )
+
+    buckets: dict = {}
+    for target_id, checked_at, score in rows:
+        day = to_local(checked_at).date()
+        buckets.setdefault((target_id, day), []).append(score)
+
+    day_labels = [start_date + timedelta(days=offset) for offset in range(days)]
+    data = []
+    for target_index, target in enumerate(targets):
+        for day_index, day in enumerate(day_labels):
+            scores = buckets.get((target.id, day))
+            avg_score = round(sum(scores) / len(scores), 1) if scores else None
+            data.append([day_index, target_index, avg_score])
+
+    return {
+        "targets": [target.name for target in targets],
+        "days": [day.strftime("%d.%m") for day in day_labels],
+        "data": data,
+    }
 
 
 def get_uptime_stats(target_id: int) -> dict:

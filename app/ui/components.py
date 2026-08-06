@@ -236,6 +236,39 @@ def render_certificate_calendar(entries: list[dict]) -> None:
                 ui.label(f"{entry['expiry_date']} — kalan gün: {entry['days_remaining']}").classes("text-caption")
 
 
+def render_response_time_percentiles(stats: dict) -> None:
+    if not stats["sample_size"]:
+        ui.label("Yanıt süresi verisi yok.").classes("text-caption text-grey")
+        return
+    with ui.row().classes("items-center gap-4"):
+        for label, key in (("p50", "p50"), ("p95", "p95"), ("p99", "p99")):
+            with ui.row().classes("items-center gap-2"):
+                ui.label(f"{label}:").classes("text-caption text-grey")
+                ui.label(f"{stats[key]:.0f} ms").classes("text-h6")
+        ui.label(f"({stats['sample_size']} örnek)").classes("text-caption text-grey")
+
+
+def render_score_heatmap(heatmap: dict) -> ui.echart:
+    height = max(220, 36 * len(heatmap["targets"]) + 80)
+    options = {
+        "tooltip": {"position": "top"},
+        "grid": {"height": "70%", "top": "10%"},
+        "xAxis": {"type": "category", "data": heatmap["days"], "splitArea": {"show": True}},
+        "yAxis": {"type": "category", "data": heatmap["targets"], "splitArea": {"show": True}},
+        "visualMap": {
+            "min": 0,
+            "max": 100,
+            "calculable": True,
+            "orient": "horizontal",
+            "left": "center",
+            "bottom": "0%",
+            "inRange": {"color": ["#f44336", "#ff9800", "#4caf50"]},
+        },
+        "series": [{"type": "heatmap", "data": heatmap["data"], "label": {"show": False}}],
+    }
+    return ui.echart(options).classes("w-full").style(f"height: {height}px")
+
+
 def render_alerts(open_alerts: list[dict]) -> None:
     if not open_alerts:
         return
