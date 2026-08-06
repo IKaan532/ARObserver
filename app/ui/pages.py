@@ -12,8 +12,11 @@ from app.ui.components import (
     render_active_filters,
     render_alerts,
     render_content_section,
+    render_downtime_incidents,
     render_status_table,
     render_target_card,
+    render_uptime_summary,
+    render_uptime_timeline,
     update_line_chart,
     update_stacked_bar_chart,
 )
@@ -272,6 +275,16 @@ def detail_page(target_id: int) -> None:
     last_update_label = ui.label("").classes("text-caption text-grey")
     last_update_label.set_visibility(False)
 
+    ui.label("Kullanılabilirlik").classes("text-h6")
+
+    @ui.refreshable
+    def render_uptime_section() -> None:
+        render_uptime_summary(services.get_uptime_stats(target_id))
+        render_uptime_timeline(services.get_uptime_timeline(target_id))
+        render_downtime_incidents(services.get_downtime_incidents(target_id))
+
+    render_uptime_section()
+
     window_start = datetime.utcnow() - timedelta(minutes=services.CHART_WINDOW_MINUTES)
     points = services.get_chart_points(target_id)
 
@@ -311,6 +324,7 @@ def detail_page(target_id: int) -> None:
         running = is_target_running(target_id)
         spinner.set_visibility(running)
         check_button.set_enabled(not running)
+        render_uptime_section.refresh()
 
         since = points[-1]["checked_at"] if points else window_start
         new_points = services.get_chart_points(target_id, since=since)

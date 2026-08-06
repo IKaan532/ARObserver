@@ -87,6 +87,56 @@ def render_active_filters(
         ui.button("Filtreleri Temizle", on_click=on_clear_all).props("flat dense")
 
 
+UPTIME_STATUS_COLORS = {
+    "up": "#4caf50",
+    "partial": "#ff9800",
+    "down": "#f44336",
+    "no_data": "#bdbdbd",
+}
+
+
+def _uptime_badge_color(pct: float | None) -> str:
+    if pct is None:
+        return GRADE_COLOR_NONE
+    if pct >= 99.9:
+        return "green"
+    if pct >= 99.0:
+        return "orange"
+    return "red"
+
+
+def render_uptime_summary(stats: dict) -> None:
+    with ui.row().classes("items-center gap-4"):
+        for label, key in (("7 gün", "uptime_7d"), ("30 gün", "uptime_30d")):
+            pct = stats.get(key)
+            with ui.row().classes("items-center gap-2"):
+                ui.label(f"{label} çalışma süresi:").classes("text-caption text-grey")
+                text = f"{pct}%" if pct is not None else "Veri yok"
+                ui.badge(text, color=_uptime_badge_color(pct)).classes("text-body2 q-pa-sm")
+
+
+def render_uptime_timeline(timeline: list[dict]) -> None:
+    with ui.row().classes("gap-0.5 items-end"):
+        for day in timeline:
+            color = UPTIME_STATUS_COLORS[day["status"]]
+            tooltip_text = f"{day['date']}: {day['uptime_pct']}%" if day["uptime_pct"] is not None else f"{day['date']}: veri yok"
+            with ui.element("div").classes("w-3 h-8 rounded").style(f"background-color: {color}"):
+                ui.tooltip(tooltip_text)
+
+
+def render_downtime_incidents(incidents: list[dict]) -> None:
+    if not incidents:
+        ui.label("Son 30 günde kesinti kaydı yok.").classes("text-caption text-grey")
+        return
+    with ui.column().classes("w-full gap-1"):
+        for incident in incidents:
+            if incident["ongoing"]:
+                text = f"{incident['start']} → devam ediyor ({incident['duration_minutes']} dk)"
+            else:
+                text = f"{incident['start']} → {incident['end']} ({incident['duration_minutes']} dk)"
+            ui.label(text).classes("text-caption")
+
+
 def render_alerts(open_alerts: list[dict]) -> None:
     if not open_alerts:
         return

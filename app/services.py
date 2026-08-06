@@ -10,6 +10,8 @@ from app.models import Alert, Check, Target
 
 CHART_WINDOW_MINUTES = 15
 MAX_CHART_POINTS = 50
+UPTIME_TIMELINE_DAYS = 30
+DOWNTIME_INCIDENT_LIMIT = 20
 
 _display_tz = ZoneInfo(settings.display_timezone)
 
@@ -250,6 +252,101 @@ def get_target_detail(target_id: int) -> dict | None:
                 for alert in open_alerts
             ],
         }
+
+
+def get_uptime_stats(target_id: int) -> dict:
+    now = datetime.utcnow()
+    with SessionLocal() as db:
+        stats = {}
+        for label, days in (("uptime_7d", 7), ("uptime_30d", 30)):
+            since = now - timedelta(days=days)
+            rows = (
+                db.query(Check.status_code)
+                .filter(Check.target_id == target_id, Check.checked_at >= since)
+                .all()
+            )
+            if not rows:
+                stats[label] = None
+                continue
+            up = sum(1 for (status_code,) in rows if status_code is not None)
+            stats[label] = round(100 * up / len(rows), 1)
+        return stats
+
+
+def get_uptime_timeline(target_id: int, days: int = UPTIME_TIMELINE_DAYS) -> list[dict]:
+    today_local = datetime.now(_display_tz).date()
+    start_date = today_local - timedelta(days=days - 1)
+    window_start_utc = (
+        datetime.combine(start_date, datetime.min.time())
+        .replace(tzinfo=_display_tz)
+        .astimezone(ZoneInfo("UTC"))
+        .replace(tzinfo=None)
+    )
+
+    with SessionLocal() as db:
+        checks = (
+            db.query(Check.checked_at, Check.status_code)
+            .filter(Check.target_id == target_id, Check.checked_at >= window_start_utc)
+            .order_by(Check.checked_at)
+            .all()
+        )
+
+    buckets: dict = {}
+    for checked_at, status_code in checks:
+        day = to_local(checked_at).date()
+        buckets.setdefault(day, []).append(status_code is not None)
+
+    timeline = []
+    for offset in range(days):
+        day = start_date + timedelta(days=offset)
+        results = buckets.get(day)
+        if not results:
+            timeline.append({"date": day.strftime("%d.%m"), "uptime_pct": None, "status": "no_data"})
+            continue
+        pct = round(100 * sum(results) / len(results), 1)
+        status = "up" if pct == 100 else "down" if pct == 0 else "partial"
+        timeline.append({"date": day.strftime("%d.%m"), "uptime_pct": pct, "status": status})
+    return timeline
+
+
+def get_downtime_incidents(
+    target_id: int, days: int = UPTIME_TIMELINE_DAYS, limit: int = DOWNTIME_INCIDENT_LIMIT
+) -> list[dict]:
+    since = datetime.utcnow() - timedelta(days=days)
+    with SessionLocal() as db:
+        checks = (
+            db.query(Check.checked_at, Check.status_code)
+            .filter(Check.target_id == target_id, Check.checked_at >= since)
+            .order_by(Check.checked_at)
+            .all()
+        )
+
+    raw_incidents = []
+    incident_start = None
+    for checked_at, status_code in checks:
+        is_down = status_code is None
+        if is_down and incident_start is None:
+            incident_start = checked_at
+        elif not is_down and incident_start is not None:
+            raw_incidents.append({"start": incident_start, "end": checked_at, "ongoing": False})
+            incident_start = None
+    if incident_start is not None:
+        raw_incidents.append({"start": incident_start, "end": None, "ongoing": True})
+
+    raw_incidents.reverse()
+    incidents = []
+    for incident in raw_incidents[:limit]:
+        end = incident["end"] or datetime.utcnow()
+        duration_minutes = round((end - incident["start"]).total_seconds() / 60)
+        incidents.append(
+            {
+                "start": local_dt(incident["start"]),
+                "end": local_dt(incident["end"]) if incident["end"] else None,
+                "ongoing": incident["ongoing"],
+                "duration_minutes": duration_minutes,
+            }
+        )
+    return incidents
 
 
 def get_chart_points(target_id: int, since: datetime | None = None, limit: int = MAX_CHART_POINTS) -> list[dict]:
