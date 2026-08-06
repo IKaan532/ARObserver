@@ -29,6 +29,25 @@ okunur. Ondan sonra tek gerçek kaynak veritabanıdır — hedefler panelden
 veya pasife alınır. `targets.yaml`'ı sonradan değiştirmek hiçbir etki
 yapmaz; dosya sadece ilk boot'ta referans alınır.
 
+### Derin Kontrol Servisi
+
+Hedef detay sayfasındaki "Derin Kontrol" düğmesi, ayrı bir Docker servisinde
+(`deepcheck/`) çalışan Playwright tabanlı bir headless Chromium'u tetikler.
+Bu servis `docker compose up --build` ile ana uygulamayla birlikte otomatik
+ayağa kalkar (`deepcheck` servisi, iç ağda `http://deepcheck:8001` adresinde,
+dışa port açmaz). Ana uygulamanın imajı bundan etkilenmez — Playwright ve
+tarayıcı yalnızca `deepcheck` imajında bulunur.
+
+Bu servis olmadan da ana panel normal çalışır; sadece "Derin Kontrol" düğmesi
+pasif görünür ve sebebini yazar. Servisi tek başına yeniden başlatmak için:
+
+```
+docker compose up --build -d deepcheck
+```
+
+Derin kontrol sonucu hedef başına tek kayıt olarak saklanır (her çalıştırmada
+üstüne yazılır, geçmiş tutulmaz) ve skora dahil edilmez.
+
 ## Ortam Değişkenleri
 
 | Değişken | Açıklama | Varsayılan |
@@ -42,6 +61,7 @@ yapmaz; dosya sadece ilk boot'ta referans alınır.
 | `ALERT_FAIL_THRESHOLD` | Art arda kaç başarısız kontrolde uyarı açılsın | `3` |
 | `CERT_EXPIRY_WARN_DAYS` | Sertifika bitişine kaç gün kala uyarı açılsın (virgülle) | `30,14,7` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TO` | SMTP uyarı bildirimi (`SMTP_HOST` boşsa devre dışı) | - |
+| `DEEPCHECK_SERVICE_URL` | Derin kontrol servisinin adresi | `http://deepcheck:8001` |
 
 ## Yerel Geliştirme (Docker'sız)
 
