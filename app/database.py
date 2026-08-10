@@ -35,14 +35,18 @@ def sync_schema() -> None:
             continue
         existing_columns = {column["name"] for column in inspector.get_columns(table.name)}
         missing_columns = [column for column in table.columns if column.name not in existing_columns]
-        if not missing_columns:
-            continue
-        with engine.begin() as connection:
-            for column in missing_columns:
-                column_type = column.type.compile(dialect=engine.dialect)
-                connection.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {column_type}'))
-                if column.default is not None and column.default.is_scalar:
-                    connection.execute(
-                        text(f'UPDATE "{table.name}" SET "{column.name}" = :value WHERE "{column.name}" IS NULL'),
-                        {"value": column.default.arg},
-                    )
+        if missing_columns:
+            with engine.begin() as connection:
+                for column in missing_columns:
+                    column_type = column.type.compile(dialect=engine.dialect)
+                    connection.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {column_type}'))
+                    if column.default is not None and column.default.is_scalar:
+                        connection.execute(
+                            text(f'UPDATE "{table.name}" SET "{column.name}" = :value WHERE "{column.name}" IS NULL'),
+                            {"value": column.default.arg},
+                        )
+
+        existing_indexes = {index["name"] for index in inspector.get_indexes(table.name)}
+        for index in table.indexes:
+            if index.name not in existing_indexes:
+                index.create(bind=engine)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import JSON, ForeignKey, String
+from sqlalchemy import JSON, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -30,6 +30,17 @@ class Target(Base):
 
 class Check(Base):
     __tablename__ = "checks"
+    __table_args__ = (
+        Index(
+            "ix_checks_target_id_checked_at_covering",
+            "target_id",
+            "checked_at",
+            "status_code",
+            "response_time_ms",
+            "score",
+        ),
+        Index("ix_checks_checked_at_target_id_score", "checked_at", "target_id", "score"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     target_id: Mapped[int] = mapped_column(ForeignKey("targets.id"), index=True)
