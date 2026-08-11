@@ -12,8 +12,14 @@ router = APIRouter(prefix="/api/v1/alerts", tags=["alerts"])
 
 
 @router.get("", response_model=list[AlertOut])
-def list_alerts(resolved: Optional[bool] = Query(None), db: Session = Depends(get_db)):
+def list_alerts(
+    target_id: Optional[int] = Query(None),
+    resolved: Optional[bool] = Query(None),
+    db: Session = Depends(get_db),
+):
     query = db.query(Alert, Target.name).join(Target, Alert.target_id == Target.id)
+    if target_id is not None:
+        query = query.filter(Alert.target_id == target_id)
     if resolved is True:
         query = query.filter(Alert.resolved_at.isnot(None))
     elif resolved is False:

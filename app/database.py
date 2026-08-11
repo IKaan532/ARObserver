@@ -49,4 +49,4 @@ def sync_schema() -> None:
         existing_indexes = {index["name"] for index in inspector.get_indexes(table.name)}
         for index in table.indexes:
             if index.name not in existing_indexes:
-                index.create(bind=engine)
+                index.create(bind=engine, checkfirst=True)

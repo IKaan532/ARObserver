@@ -35,8 +35,10 @@ def local_dt(value: datetime, fmt: str = "%d.%m.%Y %H:%M") -> str:
     return to_local(value).strftime(fmt)
 
 
-def _latest_checks_by_target(db) -> dict[int, Check]:
-    row_number = func.row_number().over(partition_by=Check.target_id, order_by=desc(Check.checked_at)).label("rn")
+def get_latest_checks_by_target(db) -> dict[int, Check]:
+    row_number = func.row_number().over(
+        partition_by=Check.target_id, order_by=(desc(Check.checked_at), desc(Check.id))
+    ).label("rn")
     ranked = select(Check.id, row_number).subquery()
     latest_ids = [row[0] for row in db.query(ranked.c.id).filter(ranked.c.rn == 1).all()]
     if not latest_ids:
@@ -54,7 +56,7 @@ def list_groups() -> list[str]:
 def list_target_cards() -> list[dict]:
     with SessionLocal() as db:
         targets = db.query(Target).order_by(Target.name).all()
-        last_checks = _latest_checks_by_target(db)
+        last_checks = get_latest_checks_by_target(db)
         cards = []
         for target in targets:
             last_check = last_checks.get(target.id)
@@ -352,7 +354,7 @@ def get_event_feed(limit: int = EVENT_FEED_LIMIT) -> list[dict]:
 def get_overview_summary() -> dict:
     with SessionLocal() as db:
         targets = db.query(Target).all()
-        last_checks = _latest_checks_by_target(db)
+        last_checks = get_latest_checks_by_target(db)
         open_alerts_count = db.query(Alert).filter(Alert.resolved_at.is_(None)).count()
 
     scored = [last_checks[t.id] for t in targets if last_checks.get(t.id) is not None and last_checks[t.id].score is not None]
@@ -377,7 +379,7 @@ def get_overview_summary() -> dict:
 def get_rankings() -> dict:
     with SessionLocal() as db:
         targets = db.query(Target).all()
-        last_checks = _latest_checks_by_target(db)
+        last_checks = get_latest_checks_by_target(db)
         entries = [(target, last_checks[target.id]) for target in targets if target.id in last_checks]
 
     lowest_grade = sorted(
@@ -401,7 +403,7 @@ def get_rankings() -> dict:
 def get_header_matrix() -> dict:
     with SessionLocal() as db:
         targets = db.query(Target).order_by(Target.name).all()
-        last_checks = _latest_checks_by_target(db)
+        last_checks = get_latest_checks_by_target(db)
         rows = []
         for target in targets:
             last_check = last_checks.get(target.id)
@@ -419,7 +421,7 @@ def get_header_matrix() -> dict:
 def get_certificate_calendar() -> list[dict]:
     with SessionLocal() as db:
         targets = db.query(Target).order_by(Target.name).all()
-        last_checks = _latest_checks_by_target(db)
+        last_checks = get_latest_checks_by_target(db)
         entries = []
         for target in targets:
             last_check = last_checks.get(target.id)
