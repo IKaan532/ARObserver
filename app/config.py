@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     alert_fail_threshold: int = 3
     cert_expiry_warn_days: str = "30,14,7"
     deepcheck_service_url: str = "http://deepcheck:8001"
+    admin_password_hash: str = ""
+    storage_secret: str = ""
 
     smtp_host: str = ""
     smtp_port: int = 587

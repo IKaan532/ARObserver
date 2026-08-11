@@ -5,6 +5,7 @@ from urllib.parse import urlencode
 from nicegui import ui
 
 from app import services
+from app.auth import attempt_login, clear_session_authentication, mark_session_authenticated
 from app.scheduler import is_target_running, trigger_manual_check
 from app.ui.components import (
     build_line_chart,
@@ -34,6 +35,45 @@ POLL_INTERVAL_SECONDS = 10.0
 GRADE_OPTIONS = ["A", "B", "C", "D", "F"]
 
 
+def _current_request():
+    return ui.context.client.request
+
+
+def _do_logout() -> None:
+    request = _current_request()
+    if request is not None:
+        session_id = request.session.get("id")
+        if session_id is not None:
+            clear_session_authentication(session_id)
+    ui.navigate.to("/login")
+
+
+@ui.page("/login")
+def login_page() -> None:
+    ui.page_title("Giriş — ARObserver")
+
+    def try_login() -> None:
+        client_key = ui.context.client.ip or "unknown"
+        if attempt_login(password_input.value, client_key):
+            request = _current_request()
+            redirect_to = "/"
+            if request is not None:
+                session_id = request.session.get("id")
+                if session_id is not None:
+                    mark_session_authenticated(session_id)
+                redirect_to = request.session.pop("redirect_to", "/")
+            ui.navigate.to(redirect_to)
+        else:
+            ui.notify("Hatalı şifre veya çok fazla deneme, biraz bekleyin.", type="negative")
+
+    with ui.card().classes("absolute-center"):
+        ui.label("ARObserver — Giriş").classes("text-h6")
+        password_input = ui.input("Şifre", password=True, password_toggle_button=True).on(
+            "keydown.enter", try_login
+        )
+        ui.button("Giriş", on_click=try_login).classes("w-full")
+
+
 @ui.page("/")
 def index_page(grade: str = "", group: str = "", q: str = "") -> None:
     ui.page_title("ARObserver — Hedefler")
@@ -48,7 +88,9 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
         </style>
         """
     )
-    ui.label("Hedefler").classes("text-h4")
+    with ui.row().classes("w-full items-center justify-between"):
+        ui.label("Hedefler").classes("text-h4")
+        ui.button("Çıkış", icon="logout", on_click=_do_logout).props("flat")
 
     @ui.refreshable
     def render_overview() -> None:
@@ -347,7 +389,9 @@ async def detail_page(target_id: int) -> None:
         return
 
     ui.page_title(f"{detail['name']} — ARObserver")
-    ui.link("← Hedefler", "/")
+    with ui.row().classes("w-full items-center justify-between"):
+        ui.link("← Hedefler", "/")
+        ui.button("Çıkış", icon="logout", on_click=_do_logout).props("flat")
     ui.label(detail["name"]).classes("text-h4")
     ui.label(f"{detail['url']} — kontrol aralığı: {detail['interval_minutes']} dk").classes("text-caption text-grey")
 
