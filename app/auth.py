@@ -99,6 +99,10 @@ def _is_session_authenticated(request: Request) -> bool:
     return _get_or_create_session_id(request) in _authenticated_session_ids
 
 
+def is_safe_redirect_path(path: str) -> bool:
+    return path.startswith("/") and not path.startswith("//") and not path.startswith("/\\")
+
+
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         path = request.url.path
@@ -109,6 +113,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                 return JSONResponse({"detail": "Kimlik doğrulama gerekli"}, status_code=401)
             return await call_next(request)
         if not _is_session_authenticated(request):
-            request.session["redirect_to"] = path
+            if is_safe_redirect_path(path):
+                request.session["redirect_to"] = path
             return RedirectResponse("/login")
         return await call_next(request)

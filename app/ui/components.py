@@ -2,6 +2,14 @@ from collections.abc import Callable
 
 from nicegui import ui
 
+from app.security_audit import SecurityCheckStatus
+
+SECURITY_CHECK_STATUS_COLORS = {
+    SecurityCheckStatus.PASS: "green",
+    SecurityCheckStatus.WARN: "orange",
+    SecurityCheckStatus.FAIL: "red",
+}
+
 GRADE_COLORS = {
     "A": "green",
     "B": "light-green",
@@ -395,6 +403,20 @@ def _render_value_cell(value: str) -> None:
         with ui.row().classes("items-center gap-2 w-full"):
             ui.label(value).classes("text-caption").style("word-break: break-all")
             ui.button(icon="content_copy", on_click=lambda: _copy_to_clipboard(value)).props("flat dense round size=sm")
+
+
+def render_security_audit(results: list) -> None:
+    if not results:
+        ui.label("Henüz güvenlik denetimi verisi yok (hedefe ulaşılamadı).")
+        return
+
+    with ui.column().classes("w-full gap-1"):
+        for result in results:
+            with ui.row().classes("w-full items-center gap-2 border-b"):
+                ui.badge(result.status.value, color=SECURITY_CHECK_STATUS_COLORS[result.status]).classes("q-pa-sm")
+                ui.label(result.name).classes("text-weight-medium")
+                ui.label(f"(ağırlık: {result.weight})").classes("text-caption text-grey")
+                ui.label(result.detail).classes("text-caption")
 
 
 def render_status_table(last_check: dict | None) -> None:

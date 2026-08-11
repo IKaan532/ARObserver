@@ -48,6 +48,22 @@ docker compose up --build -d deepcheck
 Derin kontrol sonucu hedef başına tek kayıt olarak saklanır (her çalıştırmada
 üstüne yazılır, geçmiş tutulmaz) ve skora dahil edilmez.
 
+### Kimlik Doğrulama
+
+Panel ve `/api/v1` uçları tek bir yönetici şifresiyle korunur. Şifre `.env`'de
+düz metin olarak DEĞİL, bir hash olarak saklanır:
+
+```
+python -m cli.hash_password
+```
+
+Bu komut şifreyi gizlice sorar ve `ADMIN_PASSWORD_HASH`'e yapıştırılacak
+hash'i basar. `STORAGE_SECRET` de ayarlanmalı (herhangi bir rastgele metin,
+oturum çerezlerini imzalamak için) — aksi halde her yeniden başlatmada
+oturumlar sonlanır. Her ikisi de boş bırakılırsa uygulama açılışta geçici,
+rastgele bir şifre üretip loglara yazar (`docker compose logs arobserver`) —
+panel asla şifresiz açılmaz.
+
 ## Ortam Değişkenleri
 
 | Değişken | Açıklama | Varsayılan |
@@ -62,6 +78,8 @@ Derin kontrol sonucu hedef başına tek kayıt olarak saklanır (her çalıştı
 | `CERT_EXPIRY_WARN_DAYS` | Sertifika bitişine kaç gün kala uyarı açılsın (virgülle) | `30,14,7` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TO` | SMTP uyarı bildirimi (`SMTP_HOST` boşsa devre dışı) | - |
 | `DEEPCHECK_SERVICE_URL` | Derin kontrol servisinin adresi | `http://deepcheck:8001` |
+| `ADMIN_PASSWORD_HASH` | Yönetici şifresinin hash'i (`python -m cli.hash_password` ile üretilir) | boşsa geçici şifre üretilir |
+| `STORAGE_SECRET` | Oturum çerezlerini imzalamak için gizli anahtar | boşsa geçici üretilir (kalıcı değil) |
 
 ## Yerel Geliştirme (Docker'sız)
 

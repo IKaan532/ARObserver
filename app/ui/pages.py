@@ -5,8 +5,14 @@ from urllib.parse import urlencode
 from nicegui import ui
 
 from app import services
-from app.auth import attempt_login, clear_session_authentication, mark_session_authenticated
+from app.auth import (
+    attempt_login,
+    clear_session_authentication,
+    is_safe_redirect_path,
+    mark_session_authenticated,
+)
 from app.scheduler import is_target_running, trigger_manual_check
+from app.security_audit import run_security_checks
 from app.ui.components import (
     build_line_chart,
     build_stacked_bar_chart,
@@ -23,6 +29,7 @@ from app.ui.components import (
     render_rankings,
     render_response_time_percentiles,
     render_score_heatmap,
+    render_security_audit,
     render_status_table,
     render_target_card,
     render_uptime_summary,
@@ -62,6 +69,8 @@ def login_page() -> None:
                 if session_id is not None:
                     mark_session_authenticated(session_id)
                 redirect_to = request.session.pop("redirect_to", "/")
+                if not is_safe_redirect_path(redirect_to):
+                    redirect_to = "/"
             ui.navigate.to(redirect_to)
         else:
             ui.notify("Hatalı şifre veya çok fazla deneme, biraz bekleyin.", type="negative")
@@ -437,6 +446,9 @@ async def detail_page(target_id: int) -> None:
 
     ui.label("Son Kontrol Durumu").classes("text-h6")
     render_status_table(detail["last_check"])
+
+    ui.label("Güvenlik").classes("text-h6")
+    render_security_audit(run_security_checks(detail["last_check"]))
 
     def handle_reset_baseline() -> None:
         services.reset_baseline(target_id)
