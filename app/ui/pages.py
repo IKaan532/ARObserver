@@ -12,7 +12,6 @@ from app.auth import (
     mark_session_authenticated,
 )
 from app.scheduler import is_target_running, trigger_manual_check
-from app.security_audit import run_security_checks
 from app.ui.components import (
     build_line_chart,
     build_stacked_bar_chart,
@@ -28,8 +27,8 @@ from app.ui.components import (
     render_overview_summary,
     render_rankings,
     render_response_time_percentiles,
+    render_score_breakdown,
     render_score_heatmap,
-    render_security_audit,
     render_status_table,
     render_target_card,
     render_uptime_summary,
@@ -432,6 +431,12 @@ async def detail_page(target_id: int) -> None:
 
     render_percentiles_section()
 
+    ui.label("Son Kontrol Durumu").classes("text-h6")
+    render_status_table(detail["last_check"])
+
+    ui.label("Skor Kırılımı").classes("text-h6")
+    render_score_breakdown(detail["last_check"])
+
     window_start = datetime.utcnow() - timedelta(minutes=services.CHART_WINDOW_MINUTES)
     points = services.get_chart_points(target_id)
 
@@ -443,12 +448,6 @@ async def detail_page(target_id: int) -> None:
     timing_chart = build_stacked_bar_chart(points)
     ui.label("Sayfa Boyutu").classes("text-h6")
     size_chart = build_line_chart(points, "body_size_kb")
-
-    ui.label("Son Kontrol Durumu").classes("text-h6")
-    render_status_table(detail["last_check"])
-
-    ui.label("Güvenlik").classes("text-h6")
-    render_security_audit(run_security_checks(detail["last_check"]))
 
     def handle_reset_baseline() -> None:
         services.reset_baseline(target_id)

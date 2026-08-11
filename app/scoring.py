@@ -211,3 +211,23 @@ def calculate_score(results: dict) -> dict:
         "breakdown": breakdown,
         "critical_reason": None,
     }
+
+
+def recompute_score_breakdown(check: dict | None) -> dict | None:
+    if not check or check.get("status_code") is None:
+        return None
+
+    timing = check.get("timing_result") or {}
+    results = {
+        "reachability": {"reachable": True, "status_code": check.get("status_code"), "timeout": False},
+        "redirect": check.get("redirect_result"),
+        "tls": check.get("tls_result"),
+        "headers": check.get("headers_result"),
+        "content": check.get("content_result"),
+        "compression": (
+            {"content_encoding": timing.get("content_encoding"), "body_size_bytes": timing.get("body_size_bytes")}
+            if timing
+            else None
+        ),
+    }
+    return calculate_score(results)

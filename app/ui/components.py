@@ -2,13 +2,8 @@ from collections.abc import Callable
 
 from nicegui import ui
 
-from app.security_audit import SecurityCheckStatus
-
-SECURITY_CHECK_STATUS_COLORS = {
-    SecurityCheckStatus.PASS: "green",
-    SecurityCheckStatus.WARN: "orange",
-    SecurityCheckStatus.FAIL: "red",
-}
+from app.config import SCORE_CATEGORIES
+from app.scoring import recompute_score_breakdown
 
 GRADE_COLORS = {
     "A": "green",
@@ -405,18 +400,32 @@ def _render_value_cell(value: str) -> None:
             ui.button(icon="content_copy", on_click=lambda: _copy_to_clipboard(value)).props("flat dense round size=sm")
 
 
-def render_security_audit(results: list) -> None:
-    if not results:
-        ui.label("Henüz güvenlik denetimi verisi yok (hedefe ulaşılamadı).")
+def render_score_breakdown(last_check: dict | None) -> None:
+    result = recompute_score_breakdown(last_check)
+    if result is None:
+        ui.label("Henüz kontrol verisi yok.")
+        return
+
+    ui.label(f"Toplam: {result['score']} ({result['letter_grade']})").classes("text-weight-medium")
+
+    if result["breakdown"] is None:
+        if result["reasons"]:
+            ui.label(result["reasons"][0]).classes("text-caption text-grey")
         return
 
     with ui.column().classes("w-full gap-1"):
-        for result in results:
-            with ui.row().classes("w-full items-center gap-2 border-b"):
-                ui.badge(result.status.value, color=SECURITY_CHECK_STATUS_COLORS[result.status]).classes("q-pa-sm")
-                ui.label(result.name).classes("text-weight-medium")
-                ui.label(f"(ağırlık: {result.weight})").classes("text-caption text-grey")
-                ui.label(result.detail).classes("text-caption")
+        for category, info in result["breakdown"].items():
+            if info is None:
+                continue
+            with ui.row().classes("w-full items-center justify-between border-b"):
+                ui.label(f"{SCORE_CATEGORIES[category]['label']}: {info['earned']}/{info['max']}").classes(
+                    "text-weight-medium"
+                )
+            for deduction in info["deductions"]:
+                with ui.row().classes("w-full items-center gap-2 q-ml-md"):
+                    ui.badge("kaldı", color="red").classes("q-pa-sm")
+                    ui.label(deduction["message"]).classes("text-caption")
+                    ui.label(f"-{deduction['points']} puan").classes("text-caption text-grey")
 
 
 def render_status_table(last_check: dict | None) -> None:
@@ -474,18 +483,11 @@ def render_status_table(last_check: dict | None) -> None:
         text = f"Sürüm sızdırıyor: {info.get('value')}" if info.get("reveals_version") else "Sorun yok"
         rows.append((f"{name} (sızıntı)", text))
 
-    rows.append(("Skor", f"{last_check['score']} ({last_check['letter_grade']})"))
-
     with ui.column().classes("w-full gap-1"):
         for label, value in rows:
             with ui.row().classes("w-full justify-between items-center border-b"):
                 ui.label(label).classes("text-weight-medium")
                 _render_value_cell(str(value))
-
-    if last_check.get("score_reasons"):
-        ui.label("Skor Gerekçeleri").classes("text-h6 q-mt-md")
-        for reason in last_check["score_reasons"]:
-            ui.label(f"- {reason}")
 
 
 def render_content_section(content_result: dict | None, on_reset: Callable[[], None]) -> None:
