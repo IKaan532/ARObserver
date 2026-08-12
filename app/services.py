@@ -369,6 +369,7 @@ def get_overview_summary() -> dict:
     return {
         "total_targets": len(targets),
         "healthy_count": healthy_count,
+        "safe_count": distribution["A"] + distribution["B"] + distribution["C"],
         "open_alerts_count": open_alerts_count,
         "average_score": average_score,
         "average_grade": letter_grade(round(average_score)) if average_score is not None else None,

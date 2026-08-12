@@ -150,23 +150,22 @@ def render_downtime_incidents(incidents: list[dict]) -> None:
 
 def render_overview_summary(summary: dict) -> None:
     with ui.row().classes("items-center gap-6"):
-        with ui.row().classes("items-center gap-2"):
-            ui.label("Toplam Hedef:").classes("text-caption text-grey")
-            ui.label(str(summary["total_targets"])).classes("text-h6")
-        with ui.row().classes("items-center gap-2"):
-            ui.label("Sağlıklı:").classes("text-caption text-grey")
-            ui.label(f"{summary['healthy_count']} / {summary['total_targets']}").classes("text-h6")
-        with ui.row().classes("items-center gap-2"):
+        with ui.row().classes("items-center gap-1"):
+            ui.label("Erişilebilir:").classes("text-caption text-grey")
+            ui.label(f"{summary['healthy_count']}/{summary['total_targets']}").classes("text-weight-medium")
+        with ui.row().classes("items-center gap-1"):
+            ui.label("Güvenli:").classes("text-caption text-grey")
+            ui.label(f"{summary['safe_count']}/{summary['total_targets']}").classes("text-weight-medium")
+        with ui.row().classes("items-center gap-1"):
             ui.label("Açık Uyarı:").classes("text-caption text-grey")
             color = "red" if summary["open_alerts_count"] else GRADE_COLOR_NONE
-            ui.badge(str(summary["open_alerts_count"]), color=color).classes("text-body1 q-pa-sm")
-        with ui.row().classes("items-center gap-2"):
+            ui.badge(str(summary["open_alerts_count"]), color=color).classes("q-pa-xs")
+        with ui.row().classes("items-center gap-1"):
             ui.label("Ortalama Not:").classes("text-caption text-grey")
             if summary["average_score"] is None:
-                ui.label("Veri yok").classes("text-h6")
+                ui.label("Veri yok").classes("text-weight-medium")
             else:
-                ui.label(f"{summary['average_score']}").classes("text-h6")
-                _grade_badge(summary["average_grade"])
+                ui.label(f"{summary['average_score']} ({summary['average_grade']})").classes("text-weight-medium")
 
 
 def render_grade_distribution(distribution: dict) -> ui.echart:

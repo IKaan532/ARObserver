@@ -82,8 +82,11 @@ def login_page() -> None:
         ui.button("Giriş", on_click=try_login).classes("w-full")
 
 
+VALID_TABS = ("hedefler", "genel-bakis", "olaylar")
+
+
 @ui.page("/")
-def index_page(grade: str = "", group: str = "", q: str = "") -> None:
+def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str = "") -> None:
     ui.page_title("ARObserver — Hedefler")
     ui.add_head_html(
         """
@@ -96,74 +99,15 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
         </style>
         """
     )
-    with ui.row().classes("w-full items-center justify-between"):
-        ui.label("Hedefler").classes("text-h4")
-        ui.button("Çıkış", icon="logout", on_click=_do_logout).props("flat")
 
-    @ui.refreshable
-    def render_overview() -> None:
-        render_overview_summary(services.get_overview_summary())
-
-    render_overview()
-
-    with ui.row().classes("w-full gap-8 items-start"):
-        with ui.column().classes("gap-1"):
-            ui.label("Harf Notu Dağılımı").classes("text-subtitle1")
-
-            @ui.refreshable
-            def render_distribution() -> None:
-                render_grade_distribution(services.get_overview_summary()["grade_distribution"])
-
-            render_distribution()
-        with ui.column().classes("gap-1 flex-grow"):
-            ui.label("Sıralamalar").classes("text-subtitle1")
-
-            @ui.refreshable
-            def render_rankings_section() -> None:
-                render_rankings(services.get_rankings())
-
-            render_rankings_section()
-
-    with ui.row().classes("w-full gap-8 items-start"):
-        with ui.column().classes("gap-1 flex-grow"):
-            ui.label("Güvenlik Başlığı Matrisi").classes("text-subtitle1")
-
-            @ui.refreshable
-            def render_header_matrix_section() -> None:
-                render_header_matrix(services.get_header_matrix())
-
-            render_header_matrix_section()
-        with ui.column().classes("gap-1"):
-            ui.label("Sertifika Takvimi").classes("text-subtitle1")
-
-            @ui.refreshable
-            def render_certificate_calendar_section() -> None:
-                render_certificate_calendar(services.get_certificate_calendar())
-
-            render_certificate_calendar_section()
-
-    ui.label("Skor Isı Haritası (30 gün)").classes("text-subtitle1")
-
-    @ui.refreshable
-    def render_score_heatmap_section() -> None:
-        render_score_heatmap(services.get_score_heatmap())
-
-    render_score_heatmap_section()
-
-    ui.label("Canlı Olay Akışı").classes("text-subtitle1")
-
-    @ui.refreshable
-    def render_event_feed_section() -> None:
-        render_event_feed(services.get_event_feed())
-
-    with ui.scroll_area().classes("w-full h-96 border rounded"):
-        render_event_feed_section()
+    initial_tab = tab if tab in VALID_TABS else "hedefler"
 
     state = {
         "grades": [value for value in grade.split(",") if value],
         "groups": [value for value in group.split(",") if value],
         "query": q,
     }
+    current_tab = {"value": initial_tab}
 
     def matches(card: dict) -> bool:
         if state["grades"] and card["letter_grade"] not in state["grades"]:
@@ -177,7 +121,7 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
         return True
 
     def sync_url() -> None:
-        params = {}
+        params = {"tab": current_tab["value"]}
         if state["grades"]:
             params["grade"] = ",".join(state["grades"])
         if state["groups"]:
@@ -188,205 +132,328 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
         new_url = "/" + (f"?{query_string}" if query_string else "")
         ui.run_javascript(f"history.replaceState(null, '', {json.dumps(new_url)})")
 
-    @ui.refreshable
-    def render_cards() -> None:
-        cards = services.list_target_cards()
-        filtered = [card for card in cards if matches(card)]
+    with ui.column().classes("sticky top-0 z-10 bg-white w-full gap-2 q-pb-sm"):
+        with ui.row().classes("w-full items-center justify-between q-pt-sm"):
+            ui.label("ARObserver").classes("text-h4")
+            ui.button("Çıkış", icon="logout", on_click=_do_logout).props("flat")
 
-        render_active_filters(state, remove_grade, remove_group, clear_query, clear_all)
-        ui.label(f"{len(cards)} hedeften {len(filtered)}'ü gösteriliyor").classes("text-caption text-grey")
+        @ui.refreshable
+        def render_overview() -> None:
+            render_overview_summary(services.get_overview_summary())
 
-        if not cards:
-            ui.label("Henüz izlenen hedef yok. targets.yaml dosyasını kontrol edin.")
-            return
-        if not filtered:
-            ui.label("Eşleşen hedef yok.")
-            return
+        render_overview()
 
-        with ui.grid(columns=3).classes("w-full gap-4"):
-            for card in filtered:
-                render_target_card(
-                    card, is_target_running(card["id"]), handle_check_now, add_group_filter, open_edit_dialog
-                )
+        with ui.tabs().classes("w-full") as tabs:
+            with ui.tab("hedefler", label="Hedefler"):
+                alert_badge = ui.badge("0", color="red").props("floating")
+                alert_badge.set_visibility(False)
+            ui.tab("genel-bakis", label="Genel Bakış")
+            ui.tab("olaylar", label="Olay Akışı")
 
-    def on_filter_change() -> None:
-        state["grades"] = list(grade_select.value or [])
-        state["groups"] = list(group_select.value or [])
-        state["query"] = search_input.value or ""
-        sync_url()
-        render_cards.refresh()
+    with ui.tab_panels(tabs, value=initial_tab).classes("w-full"):
+        with ui.tab_panel("hedefler"):
+            hedefler_container = ui.column().classes("w-full gap-2")
+        with ui.tab_panel("genel-bakis"):
+            genel_bakis_container = ui.column().classes("w-full gap-2")
+        with ui.tab_panel("olaylar"):
+            olaylar_container = ui.column().classes("w-full gap-2")
 
-    def remove_grade(value: str) -> None:
-        grade_select.set_value([v for v in grade_select.value if v != value])
-        on_filter_change()
+    containers = {"hedefler": hedefler_container, "genel-bakis": genel_bakis_container, "olaylar": olaylar_container}
+    built = {"hedefler": False, "genel-bakis": False, "olaylar": False}
+    timers: dict[str, ui.timer] = {}
 
-    def remove_group(value: str) -> None:
-        group_select.set_value([v for v in group_select.value if v != value])
-        on_filter_change()
+    def build_genel_bakis() -> None:
+        with containers["genel-bakis"]:
+            genel_bakis_update_label = ui.label("").classes("text-caption text-grey")
 
-    def clear_query() -> None:
-        search_input.set_value("")
-        on_filter_change()
+            with ui.element("div").classes("w-full grid grid-cols-1 md:grid-cols-2 gap-4"):
+                with ui.column().classes("gap-1"):
+                    ui.label("Harf Notu Dağılımı").classes("text-subtitle1")
 
-    def clear_all() -> None:
-        grade_select.set_value([])
-        group_select.set_value([])
-        search_input.set_value("")
-        on_filter_change()
+                    @ui.refreshable
+                    def render_distribution() -> None:
+                        render_grade_distribution(services.get_overview_summary()["grade_distribution"])
 
-    def add_group_filter(tag: str) -> None:
-        current = list(group_select.value or [])
-        if tag not in current:
-            current.append(tag)
-        group_select.set_value(current)
-        on_filter_change()
+                    render_distribution()
+                with ui.column().classes("gap-1"):
+                    ui.label("Sıralamalar").classes("text-subtitle1")
 
-    def handle_check_now(target_id: int) -> None:
-        result = trigger_manual_check(target_id)
-        if result == "cooldown":
-            ui.notify("Bu hedef için 30 saniye içinde tekrar tetiklenemez, bekleyin.", type="warning")
-        elif result == "running":
-            ui.notify("Kontrol zaten çalışıyor.", type="info")
-        render_cards.refresh()
+                    @ui.refreshable
+                    def render_rankings_section() -> None:
+                        render_rankings(services.get_rankings())
 
-    def trigger_all() -> None:
-        for card in services.list_target_cards():
-            trigger_manual_check(card["id"])
-        render_cards.refresh()
+                    render_rankings_section()
+                with ui.column().classes("gap-1"):
+                    ui.label("Güvenlik Başlığı Matrisi").classes("text-subtitle1")
 
-    def open_target_dialog(target: dict | None) -> None:
-        is_edit = target is not None
+                    @ui.refreshable
+                    def render_header_matrix_section() -> None:
+                        render_header_matrix(services.get_header_matrix())
 
-        with ui.dialog() as dialog, ui.card().classes("w-96"):
-            ui.label("Hedefi Düzenle" if is_edit else "Yeni Hedef").classes("text-h6")
-            name_input = ui.input(label="Ad", value=target["name"] if is_edit else "").classes("w-full")
-            url_input = ui.input(label="URL", value=target["url"] if is_edit else "").classes("w-full")
-            interval_input = ui.number(
-                label="Kontrol Aralığı (dk)", value=target["interval_minutes"] if is_edit else 5, min=1, precision=0
-            ).classes("w-full")
-            tags_select = ui.select(
-                services.list_groups(),
-                value=list(target["tags"]) if is_edit else [],
-                multiple=True,
-                new_value_mode="add-unique",
-                with_input=True,
-                label="Grup/Etiket",
-            ).classes("w-full")
-            keyword_input = ui.input(
-                label="Beklenen Anahtar Kelime (isteğe bağlı)",
-                value=(target["expected_keyword"] or "") if is_edit else "",
-            ).classes("w-full")
-            status_input = ui.number(
-                label="Beklenen Durum Kodu",
-                value=target["expected_status"] if is_edit else 200,
-                min=100,
-                max=599,
-                precision=0,
-            ).classes("w-full")
-            active_switch = ui.switch("Aktif", value=target["active"] if is_edit else True)
+                    render_header_matrix_section()
+                with ui.column().classes("gap-1"):
+                    ui.label("Sertifika Takvimi").classes("text-subtitle1")
 
-            def save() -> None:
-                try:
+                    @ui.refreshable
+                    def render_certificate_calendar_section() -> None:
+                        render_certificate_calendar(services.get_certificate_calendar())
+
+                    render_certificate_calendar_section()
+                with ui.column().classes("gap-1 md:col-span-2"):
+                    ui.label("Skor Isı Haritası (30 gün)").classes("text-subtitle1")
+
+                    @ui.refreshable
+                    def render_score_heatmap_section() -> None:
+                        render_score_heatmap(services.get_score_heatmap())
+
+                    render_score_heatmap_section()
+
+        def genel_bakis_tick() -> None:
+            render_distribution.refresh()
+            render_rankings_section.refresh()
+            render_header_matrix_section.refresh()
+            render_certificate_calendar_section.refresh()
+            render_score_heatmap_section.refresh()
+            genel_bakis_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
+
+        timers["genel-bakis"] = ui.timer(POLL_INTERVAL_SECONDS, genel_bakis_tick)
+
+    def build_olaylar() -> None:
+        with containers["olaylar"]:
+            olaylar_update_label = ui.label("").classes("text-caption text-grey")
+
+            @ui.refreshable
+            def render_event_feed_section() -> None:
+                render_event_feed(services.get_event_feed())
+
+            with ui.scroll_area().classes("w-full h-[70vh] border rounded"):
+                render_event_feed_section()
+
+        def olaylar_tick() -> None:
+            render_event_feed_section.refresh()
+            olaylar_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
+
+        timers["olaylar"] = ui.timer(POLL_INTERVAL_SECONDS, olaylar_tick)
+
+    def build_hedefler() -> None:
+        def open_target_dialog(target: dict | None) -> None:
+            is_edit = target is not None
+
+            with ui.dialog() as dialog, ui.card().classes("w-96"):
+                ui.label("Hedefi Düzenle" if is_edit else "Yeni Hedef").classes("text-h6")
+                name_input = ui.input(label="Ad", value=target["name"] if is_edit else "").classes("w-full")
+                url_input = ui.input(label="URL", value=target["url"] if is_edit else "").classes("w-full")
+                interval_input = ui.number(
+                    label="Kontrol Aralığı (dk)",
+                    value=target["interval_minutes"] if is_edit else 5,
+                    min=1,
+                    precision=0,
+                ).classes("w-full")
+                tags_select = ui.select(
+                    services.list_groups(),
+                    value=list(target["tags"]) if is_edit else [],
+                    multiple=True,
+                    new_value_mode="add-unique",
+                    with_input=True,
+                    label="Grup/Etiket",
+                ).classes("w-full")
+                keyword_input = ui.input(
+                    label="Beklenen Anahtar Kelime (isteğe bağlı)",
+                    value=(target["expected_keyword"] or "") if is_edit else "",
+                ).classes("w-full")
+                status_input = ui.number(
+                    label="Beklenen Durum Kodu",
+                    value=target["expected_status"] if is_edit else 200,
+                    min=100,
+                    max=599,
+                    precision=0,
+                ).classes("w-full")
+                active_switch = ui.switch("Aktif", value=target["active"] if is_edit else True)
+
+                def save() -> None:
+                    try:
+                        if is_edit:
+                            services.update_target(
+                                target["id"],
+                                name_input.value,
+                                url_input.value,
+                                int(interval_input.value),
+                                list(tags_select.value or []),
+                                keyword_input.value,
+                                active_switch.value,
+                                int(status_input.value),
+                            )
+                        else:
+                            new_id = services.create_target(
+                                name_input.value,
+                                url_input.value,
+                                int(interval_input.value),
+                                list(tags_select.value or []),
+                                keyword_input.value,
+                                int(status_input.value),
+                            )
+                            ui.notify(f"Hedef eklendi, ilk kontrol tetiklendi (id {new_id}).", type="positive")
+                    except ValueError as exc:
+                        ui.notify(str(exc), type="negative")
+                        return
+                    dialog.close()
+                    render_cards.refresh()
                     if is_edit:
-                        services.update_target(
-                            target["id"],
-                            name_input.value,
-                            url_input.value,
-                            int(interval_input.value),
-                            list(tags_select.value or []),
-                            keyword_input.value,
-                            active_switch.value,
-                            int(status_input.value),
-                        )
-                    else:
-                        new_id = services.create_target(
-                            name_input.value,
-                            url_input.value,
-                            int(interval_input.value),
-                            list(tags_select.value or []),
-                            keyword_input.value,
-                            int(status_input.value),
-                        )
-                        ui.notify(f"Hedef eklendi, ilk kontrol tetiklendi (id {new_id}).", type="positive")
-                except ValueError as exc:
-                    ui.notify(str(exc), type="negative")
+                        ui.notify("Kaydedildi.", type="positive")
+
+                def confirm_delete() -> None:
+                    with ui.dialog() as confirm, ui.card():
+                        ui.label(f"'{target['name']}' silinsin mi? Geçmiş kayıtları da silinecek.")
+                        with ui.row().classes("w-full justify-end gap-2"):
+                            ui.button("Vazgeç", on_click=confirm.close).props("flat")
+
+                            def do_delete() -> None:
+                                services.delete_target(target["id"])
+                                confirm.close()
+                                dialog.close()
+                                render_cards.refresh()
+                                ui.notify("Hedef silindi.", type="info")
+
+                            ui.button("Sil", on_click=do_delete, color="red")
+                    confirm.open()
+
+                def handle_reset() -> None:
+                    services.reset_baseline(target["id"])
+                    trigger_manual_check(target["id"])
+                    ui.notify("Temel çizgi sıfırlandı, yeni kontrol tetiklendi.", type="info")
+
+                with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
+                    if is_edit:
+                        ui.button("Yeni Durumu Temel Al", on_click=handle_reset).props("flat")
+                        ui.button("Sil", on_click=confirm_delete, color="red").props("flat")
+                    ui.button("Vazgeç", on_click=dialog.close).props("flat")
+                    ui.button("Kaydet", on_click=save)
+
+            dialog.open()
+
+        def open_edit_dialog(target_id: int) -> None:
+            target = services.get_editable_target(target_id)
+            if target is not None:
+                open_target_dialog(target)
+
+        def open_create_dialog() -> None:
+            open_target_dialog(None)
+
+        def on_filter_change() -> None:
+            state["grades"] = list(grade_select.value or [])
+            state["groups"] = list(group_select.value or [])
+            state["query"] = search_input.value or ""
+            sync_url()
+            render_cards.refresh()
+
+        def remove_grade(value: str) -> None:
+            grade_select.set_value([v for v in grade_select.value if v != value])
+            on_filter_change()
+
+        def remove_group(value: str) -> None:
+            group_select.set_value([v for v in group_select.value if v != value])
+            on_filter_change()
+
+        def clear_query() -> None:
+            search_input.set_value("")
+            on_filter_change()
+
+        def clear_all() -> None:
+            grade_select.set_value([])
+            group_select.set_value([])
+            search_input.set_value("")
+            on_filter_change()
+
+        def add_group_filter(tag: str) -> None:
+            current = list(group_select.value or [])
+            if tag not in current:
+                current.append(tag)
+            group_select.set_value(current)
+            on_filter_change()
+
+        def trigger_all() -> None:
+            for card in services.list_target_cards():
+                trigger_manual_check(card["id"])
+            render_cards.refresh()
+
+        def handle_check_now(target_id: int) -> None:
+            result = trigger_manual_check(target_id)
+            if result == "cooldown":
+                ui.notify("Bu hedef için 30 saniye içinde tekrar tetiklenemez, bekleyin.", type="warning")
+            elif result == "running":
+                ui.notify("Kontrol zaten çalışıyor.", type="info")
+            render_cards.refresh()
+
+        with containers["hedefler"]:
+            with ui.row().classes("items-center gap-4"):
+                grade_select = ui.select(
+                    GRADE_OPTIONS,
+                    value=state["grades"],
+                    multiple=True,
+                    label="Harf Notu",
+                    on_change=lambda e: on_filter_change(),
+                )
+                group_select = ui.select(
+                    services.list_groups(),
+                    value=state["groups"],
+                    multiple=True,
+                    label="Grup",
+                    on_change=lambda e: on_filter_change(),
+                )
+                search_input = ui.input(
+                    label="Ara (ad/url)", value=state["query"], on_change=lambda e: on_filter_change()
+                )
+                ui.button("Tümünü Şimdi Kontrol Et", on_click=trigger_all)
+                ui.button("+ Yeni Hedef", on_click=open_create_dialog)
+
+            hedefler_update_label = ui.label("").classes("text-caption text-grey")
+
+            @ui.refreshable
+            def render_cards() -> None:
+                cards = services.list_target_cards()
+                filtered = [card for card in cards if matches(card)]
+
+                render_active_filters(state, remove_grade, remove_group, clear_query, clear_all)
+                ui.label(f"{len(cards)} hedeften {len(filtered)}'ü gösteriliyor").classes("text-caption text-grey")
+
+                if not cards:
+                    ui.label("Henüz izlenen hedef yok. targets.yaml dosyasını kontrol edin.")
                     return
-                dialog.close()
-                render_cards.refresh()
-                if is_edit:
-                    ui.notify("Kaydedildi.", type="positive")
+                if not filtered:
+                    ui.label("Eşleşen hedef yok.")
+                    return
 
-            def confirm_delete() -> None:
-                with ui.dialog() as confirm, ui.card():
-                    ui.label(f"'{target['name']}' silinsin mi? Geçmiş kayıtları da silinecek.")
-                    with ui.row().classes("w-full justify-end gap-2"):
-                        ui.button("Vazgeç", on_click=confirm.close).props("flat")
+                with ui.element("div").classes("w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"):
+                    for card in filtered:
+                        render_target_card(
+                            card, is_target_running(card["id"]), handle_check_now, add_group_filter, open_edit_dialog
+                        )
 
-                        def do_delete() -> None:
-                            services.delete_target(target["id"])
-                            confirm.close()
-                            dialog.close()
-                            render_cards.refresh()
-                            ui.notify("Hedef silindi.", type="info")
+            render_cards()
 
-                        ui.button("Sil", on_click=do_delete, color="red")
-                confirm.open()
+        def hedefler_tick() -> None:
+            render_cards.refresh()
+            render_overview.refresh()
+            open_count = services.get_overview_summary()["open_alerts_count"]
+            alert_badge.set_text(str(open_count))
+            alert_badge.set_visibility(open_count > 0)
+            hedefler_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
 
-            def handle_reset() -> None:
-                services.reset_baseline(target["id"])
-                trigger_manual_check(target["id"])
-                ui.notify("Temel çizgi sıfırlandı, yeni kontrol tetiklendi.", type="info")
+        timers["hedefler"] = ui.timer(POLL_INTERVAL_SECONDS, hedefler_tick)
 
-            with ui.row().classes("w-full justify-end gap-2 q-mt-md"):
-                if is_edit:
-                    ui.button("Yeni Durumu Temel Al", on_click=handle_reset).props("flat")
-                    ui.button("Sil", on_click=confirm_delete, color="red").props("flat")
-                ui.button("Vazgeç", on_click=dialog.close).props("flat")
-                ui.button("Kaydet", on_click=save)
+    BUILDERS = {"hedefler": build_hedefler, "genel-bakis": build_genel_bakis, "olaylar": build_olaylar}
 
-        dialog.open()
+    def activate_tab(name: str) -> None:
+        current_tab["value"] = name
+        for tab_name, timer in timers.items():
+            timer.active = tab_name == name
+        if not built[name]:
+            built[name] = True
+            BUILDERS[name]()
+        sync_url()
 
-    def open_edit_dialog(target_id: int) -> None:
-        target = services.get_editable_target(target_id)
-        if target is not None:
-            open_target_dialog(target)
-
-    def open_create_dialog() -> None:
-        open_target_dialog(None)
-
-    with ui.row().classes("items-center gap-4"):
-        grade_select = ui.select(
-            GRADE_OPTIONS, value=state["grades"], multiple=True, label="Harf Notu", on_change=lambda e: on_filter_change()
-        )
-        group_select = ui.select(
-            services.list_groups(),
-            value=state["groups"],
-            multiple=True,
-            label="Grup",
-            on_change=lambda e: on_filter_change(),
-        )
-        search_input = ui.input(label="Ara (ad/url)", value=state["query"], on_change=lambda e: on_filter_change())
-        ui.button("Tümünü Şimdi Kontrol Et", on_click=trigger_all)
-        ui.button("+ Yeni Hedef", on_click=open_create_dialog)
-
-    last_update_label = ui.label("").classes("text-caption text-grey")
-    last_update_label.set_visibility(False)
-
-    render_cards()
-
-    def tick() -> None:
-        render_cards.refresh()
-        render_overview.refresh()
-        render_distribution.refresh()
-        render_rankings_section.refresh()
-        render_header_matrix_section.refresh()
-        render_certificate_calendar_section.refresh()
-        render_score_heatmap_section.refresh()
-        render_event_feed_section.refresh()
-        last_update_label.set_text(f"son güncelleme: {datetime.now().strftime('%H:%M:%S')}")
-        last_update_label.set_visibility(True)
-
-    ui.timer(POLL_INTERVAL_SECONDS, tick)
+    tabs.on_value_change(lambda e: activate_tab(e.value))
+    activate_tab(initial_tab)
 
 
 @ui.page("/targets/{target_id}")
