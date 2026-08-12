@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-SCORING_VERSION = 4
+SCORING_VERSION = 5
 
 SCORE_CATEGORIES = {
     "tls_certificate": {"label": "TLS Sertifika Geçerliliği", "max_points": 25},
@@ -40,6 +40,7 @@ SCORE_CATEGORIES = {
     "content_integrity": {"label": "İçerik Bütünlüğü", "max_points": 10},
     "info_leak": {"label": "Bilgi Sızıntısı", "max_points": 5},
     "compression": {"label": "Sıkıştırma", "max_points": 5},
+    "cookie_security": {"label": "Çerez Güvenliği", "max_points": 10},
 }
 
 TLS_CERTIFICATE_RULES = {
@@ -81,6 +82,12 @@ INFO_LEAK_RULES = {
 
 COMPRESSION_RULES = {
     "no_compression": {"points": 5, "message": "Yanıt sıkıştırılmıyor (Content-Encoding yok)"},
+}
+
+COOKIE_SECURITY_RULES = {
+    "missing_secure": {"points": 4, "message": "Bir veya daha fazla çerezde Secure bayrağı eksik"},
+    "missing_httponly": {"points": 3, "message": "Bir veya daha fazla çerezde HttpOnly bayrağı eksik"},
+    "weak_samesite": {"points": 3, "message": "Bir veya daha fazla çerezde SameSite eksik veya None"},
 }
 
 CERT_EXPIRY_SCORE_WARN_DAYS = 30

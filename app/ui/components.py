@@ -482,6 +482,21 @@ def render_status_table(last_check: dict | None) -> None:
         text = f"Sürüm sızdırıyor: {info.get('value')}" if info.get("reveals_version") else "Sorun yok"
         rows.append((f"{name} (sızıntı)", text))
 
+    cookies = headers_result.get("cookies") or []
+    if not cookies:
+        rows.append(("Çerezler", "Çerez kurulmadı."))
+    else:
+        for cookie in cookies:
+            flags = []
+            if not cookie.get("secure"):
+                flags.append("Secure yok")
+            if not cookie.get("http_only"):
+                flags.append("HttpOnly yok")
+            if cookie.get("same_site") in (None, "None"):
+                flags.append("SameSite=None")
+            flags_text = ", ".join(flags) if flags else "Tüm bayraklar mevcut"
+            rows.append((f"Çerez: {cookie['name']}", flags_text))
+
     with ui.column().classes("w-full gap-1"):
         for label, value in rows:
             with ui.row().classes("w-full justify-between items-center border-b"):

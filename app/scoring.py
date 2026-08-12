@@ -1,6 +1,7 @@
 from app.config import (
     COMPRESSION_RULES,
     CONTENT_INTEGRITY_RULES,
+    COOKIE_SECURITY_RULES,
     HTTPS_REDIRECT_RULES,
     INFO_LEAK_RULES,
     LETTER_GRADE_THRESHOLDS,
@@ -110,10 +111,28 @@ def evaluate_https_redirect(redirect: dict) -> dict | None:
     if redirect is None:
         return None
     deductions = []
-    if not redirect.get("redirects_to_https"):
+    if not redirect.get("error") and not redirect.get("redirects_to_https"):
         rule = HTTPS_REDIRECT_RULES["not_redirecting"]
         deductions.append(_deduction("not_redirecting", "https_redirect", rule["points"], rule["message"]))
     return _finalize("https_redirect", deductions)
+
+
+def evaluate_cookie_security(headers: dict) -> dict | None:
+    if not headers or not headers.get("reachable", False):
+        return None
+
+    cookies = headers.get("cookies") or []
+    deductions = []
+    if any(not cookie.get("secure") for cookie in cookies):
+        rule = COOKIE_SECURITY_RULES["missing_secure"]
+        deductions.append(_deduction("missing_secure", "cookie_security", rule["points"], rule["message"]))
+    if any(not cookie.get("http_only") for cookie in cookies):
+        rule = COOKIE_SECURITY_RULES["missing_httponly"]
+        deductions.append(_deduction("missing_httponly", "cookie_security", rule["points"], rule["message"]))
+    if any(cookie.get("same_site") in (None, "None") for cookie in cookies):
+        rule = COOKIE_SECURITY_RULES["weak_samesite"]
+        deductions.append(_deduction("weak_samesite", "cookie_security", rule["points"], rule["message"]))
+    return _finalize("cookie_security", deductions)
 
 
 def evaluate_content_integrity(content: dict) -> dict | None:
@@ -162,6 +181,7 @@ CATEGORY_EVALUATORS = {
     "content_integrity": lambda results: evaluate_content_integrity(results.get("content")),
     "info_leak": lambda results: evaluate_info_leak(results.get("headers") or {}),
     "compression": evaluate_compression,
+    "cookie_security": lambda results: evaluate_cookie_security(results.get("headers") or {}),
 }
 
 
