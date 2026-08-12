@@ -30,7 +30,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-SCORING_VERSION = 5
+SCORING_VERSION = 6
 
 SCORE_CATEGORIES = {
     "tls_certificate": {"label": "TLS Sertifika Geçerliliği", "max_points": 25},
@@ -41,6 +41,7 @@ SCORE_CATEGORIES = {
     "info_leak": {"label": "Bilgi Sızıntısı", "max_points": 5},
     "compression": {"label": "Sıkıştırma", "max_points": 5},
     "cookie_security": {"label": "Çerez Güvenliği", "max_points": 10},
+    "dns_hygiene": {"label": "DNS Hijyeni", "max_points": 10},
 }
 
 TLS_CERTIFICATE_RULES = {
@@ -88,6 +89,12 @@ COOKIE_SECURITY_RULES = {
     "missing_secure": {"points": 4, "message": "Bir veya daha fazla çerezde Secure bayrağı eksik"},
     "missing_httponly": {"points": 3, "message": "Bir veya daha fazla çerezde HttpOnly bayrağı eksik"},
     "weak_samesite": {"points": 3, "message": "Bir veya daha fazla çerezde SameSite eksik veya None"},
+}
+
+DNS_HYGIENE_RULES = {
+    "missing_spf": {"points": 4, "message": "SPF (TXT) kaydı bulunamadı"},
+    "missing_dmarc": {"points": 4, "message": "DMARC (TXT, _dmarc) kaydı bulunamadı"},
+    "missing_caa": {"points": 2, "message": "CAA kaydı bulunamadı"},
 }
 
 CERT_EXPIRY_SCORE_WARN_DAYS = 30

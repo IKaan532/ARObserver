@@ -2,6 +2,7 @@ from app.config import (
     COMPRESSION_RULES,
     CONTENT_INTEGRITY_RULES,
     COOKIE_SECURITY_RULES,
+    DNS_HYGIENE_RULES,
     HTTPS_REDIRECT_RULES,
     INFO_LEAK_RULES,
     LETTER_GRADE_THRESHOLDS,
@@ -135,6 +136,26 @@ def evaluate_cookie_security(headers: dict) -> dict | None:
     return _finalize("cookie_security", deductions)
 
 
+def evaluate_dns_hygiene(dns_hygiene: dict) -> dict | None:
+    if not dns_hygiene:
+        return None
+    fields = ("spf_present", "dmarc_present", "caa_present")
+    if all(dns_hygiene.get(field) is None for field in fields):
+        return None
+
+    deductions = []
+    if dns_hygiene.get("spf_present") is False:
+        rule = DNS_HYGIENE_RULES["missing_spf"]
+        deductions.append(_deduction("missing_spf", "dns_hygiene", rule["points"], rule["message"]))
+    if dns_hygiene.get("dmarc_present") is False:
+        rule = DNS_HYGIENE_RULES["missing_dmarc"]
+        deductions.append(_deduction("missing_dmarc", "dns_hygiene", rule["points"], rule["message"]))
+    if dns_hygiene.get("caa_present") is False:
+        rule = DNS_HYGIENE_RULES["missing_caa"]
+        deductions.append(_deduction("missing_caa", "dns_hygiene", rule["points"], rule["message"]))
+    return _finalize("dns_hygiene", deductions)
+
+
 def evaluate_content_integrity(content: dict) -> dict | None:
     if content is None:
         return None
@@ -182,6 +203,7 @@ CATEGORY_EVALUATORS = {
     "info_leak": lambda results: evaluate_info_leak(results.get("headers") or {}),
     "compression": evaluate_compression,
     "cookie_security": lambda results: evaluate_cookie_security(results.get("headers") or {}),
+    "dns_hygiene": lambda results: evaluate_dns_hygiene(results.get("dns") or {}),
 }
 
 
@@ -241,6 +263,7 @@ def recompute_score_breakdown(check: dict | None) -> dict | None:
     results = {
         "reachability": {"reachable": True, "status_code": check.get("status_code"), "timeout": False},
         "redirect": check.get("redirect_result"),
+        "dns": check.get("dns_result"),
         "tls": check.get("tls_result"),
         "headers": check.get("headers_result"),
         "content": check.get("content_result"),

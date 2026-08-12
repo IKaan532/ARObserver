@@ -9,7 +9,7 @@ from sqlalchemy import desc
 
 from app.alerting.rules import cleanup_legacy_cert_expiry_alerts, evaluate_rules, notify
 from app.checks.content import check_content, compare_fingerprint
-from app.checks.dns import check_dns
+from app.checks.dns import check_dns, check_dns_hygiene
 from app.checks.headers import check_headers
 from app.checks.reachability import check_reachability
 from app.checks.redirect import check_https_redirect
@@ -107,6 +107,7 @@ async def run_target_check(target_id: int) -> None:
         check_content(url, expected_keyword),
     )
     dns = await asyncio.to_thread(check_dns, url)
+    dns.update(await asyncio.to_thread(check_dns_hygiene, url))
     tls = await asyncio.to_thread(check_tls, url)
 
     fingerprint = content.get("fingerprint")

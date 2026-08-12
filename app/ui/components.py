@@ -448,6 +448,17 @@ def render_status_table(last_check: dict | None) -> None:
         ),
     ]
 
+    dns_result = last_check["dns_result"] or {}
+
+    def _hygiene_text(value: bool | None) -> str:
+        if value is None:
+            return "Test edilemedi"
+        return "Var" if value else "Yok"
+
+    rows.append(("SPF Kaydı", _hygiene_text(dns_result.get("spf_present"))))
+    rows.append(("DMARC Kaydı", _hygiene_text(dns_result.get("dmarc_present"))))
+    rows.append(("CAA Kaydı", _hygiene_text(dns_result.get("caa_present"))))
+
     tls_result = last_check["tls_result"] or {}
     if tls_result.get("applicable"):
         tls_text = ("Geçerli" if tls_result.get("chain_valid") else "Geçersiz") + f", kalan gün: {tls_result.get('days_remaining')}"
