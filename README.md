@@ -77,6 +77,7 @@ panel asla şifresiz açılmaz.
 | `ALERT_FAIL_THRESHOLD` | Art arda kaç başarısız kontrolde uyarı açılsın | `3` |
 | `CERT_EXPIRY_WARN_DAYS` | Sertifika bitişine kaç gün kala uyarı açılsın (virgülle) | `30,14,7` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, `SMTP_TO` | SMTP uyarı bildirimi (`SMTP_HOST` boşsa devre dışı) | - |
+| `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | Telegram uyarı bildirimi (ikisi de boşsa devre dışı) | - |
 | `DEEPCHECK_SERVICE_URL` | Derin kontrol servisinin adresi | `http://deepcheck:8001` |
 | `ADMIN_PASSWORD_HASH` | Yönetici şifresinin hash'i (`python -m cli.hash_password` ile üretilir) | boşsa geçici şifre üretilir |
 | `STORAGE_SECRET` | Oturum çerezlerini imzalamak için gizli anahtar | boşsa geçici üretilir (kalıcı değil) |

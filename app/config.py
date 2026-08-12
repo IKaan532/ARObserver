@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     smtp_to: str = ""
 
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+
     @property
     def cert_expiry_warn_days_list(self) -> list[int]:
         return [int(value) for value in self.cert_expiry_warn_days.split(",") if value]

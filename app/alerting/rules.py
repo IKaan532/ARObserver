@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.alerting.console import ConsoleNotifier
 from app.alerting.email import EmailNotifier
+from app.alerting.telegram import TelegramNotifier
 from app.checks.headers import SECURITY_HEADERS
 from app.config import settings
 from app.models import Alert, Check, Target
@@ -208,6 +209,8 @@ def _active_notifiers():
     notifiers = [ConsoleNotifier()]
     if settings.smtp_host:
         notifiers.append(EmailNotifier())
+    if settings.telegram_bot_token and settings.telegram_chat_id:
+        notifiers.append(TelegramNotifier())
     return notifiers
 
 
