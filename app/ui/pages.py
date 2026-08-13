@@ -412,14 +412,14 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                     multiple=True,
                     label="Harf Notu",
                     on_change=lambda e: on_filter_change(),
-                )
+                ).classes("min-w-[140px]")
                 group_select = ui.select(
                     services.list_groups(),
                     value=state["groups"],
                     multiple=True,
                     label="Grup",
                     on_change=lambda e: on_filter_change(),
-                )
+                ).classes("min-w-[140px]")
                 search_input = ui.input(
                     label="Ara (ad/url)", value=state["query"], on_change=lambda e: on_filter_change()
                 )
