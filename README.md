@@ -64,6 +64,14 @@ oturumlar sonlanır. Her ikisi de boş bırakılırsa uygulama açılışta geç
 rastgele bir şifre üretip loglara yazar (`docker compose logs arobserver`) —
 panel asla şifresiz açılmaz.
 
+**Önemli:** `ADMIN_PASSWORD_HASH` değeri `$` karakterleri içerir
+(`pbkdf2_sha256$260000$...$...`). Docker Compose, `.env` dosyasındaki `$`
+işaretini değişken referansı olarak yorumlar ve sessizce boşaltır — bu
+yüzden `.env`'e yapıştırırken her `$`'ı `$$` olarak İKİLEYİN (örn.
+`pbkdf2_sha256$$260000$$...$$...`). Konteyner içinde `printenv
+ADMIN_PASSWORD_HASH` ile gerçek (tek `$`'lı) değerin doğru geldiğini
+doğrulayabilirsiniz.
+
 ## Ortam Değişkenleri
 
 | Değişken | Açıklama | Varsayılan |

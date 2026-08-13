@@ -57,6 +57,9 @@ def list_target_cards() -> list[dict]:
     with SessionLocal() as db:
         targets = db.query(Target).order_by(Target.name).all()
         last_checks = get_latest_checks_by_target(db)
+        open_alert_target_ids = {
+            row[0] for row in db.query(Alert.target_id).filter(Alert.resolved_at.is_(None)).distinct().all()
+        }
         cards = []
         for target in targets:
             last_check = last_checks.get(target.id)
@@ -71,9 +74,11 @@ def list_target_cards() -> list[dict]:
                     "tags": target.tags or [],
                     "active": target.active,
                     "letter_grade": last_check.letter_grade if last_check else None,
+                    "score": last_check.score if last_check else None,
                     "status_code": last_check.status_code if last_check else None,
                     "checked_at": local_dt(last_check.checked_at) if last_check else None,
                     "cert_days_remaining": cert_days_remaining,
+                    "has_open_alerts": target.id in open_alert_target_ids,
                 }
             )
         return cards
@@ -533,6 +538,50 @@ def get_uptime_stats(target_id: int) -> dict:
             up = sum(1 for (status_code,) in rows if status_code is not None)
             stats[label] = round(100 * up / len(rows), 1)
         return stats
+
+
+def get_fleet_uptime_stats() -> dict[int, dict]:
+    now = datetime.utcnow()
+    with SessionLocal() as db:
+        targets = db.query(Target.id, Target.name).order_by(Target.name).all()
+        stats = {target_id: {"name": name, "uptime_7d": None, "uptime_30d": None} for target_id, name in targets}
+
+        for label, days in (("uptime_7d", 7), ("uptime_30d", 30)):
+            since = now - timedelta(days=days)
+            rows = db.query(Check.target_id, Check.status_code).filter(Check.checked_at >= since).all()
+
+            totals: dict[int, int] = {}
+            ups: dict[int, int] = {}
+            for target_id, status_code in rows:
+                totals[target_id] = totals.get(target_id, 0) + 1
+                if status_code is not None:
+                    ups[target_id] = ups.get(target_id, 0) + 1
+
+            for target_id, total in totals.items():
+                if target_id in stats:
+                    stats[target_id][label] = round(100 * ups.get(target_id, 0) / total, 1)
+
+    return stats
+
+
+def get_fleet_open_alerts() -> list[dict]:
+    with SessionLocal() as db:
+        rows = (
+            db.query(Alert, Target.name)
+            .join(Target, Alert.target_id == Target.id)
+            .filter(Alert.resolved_at.is_(None))
+            .order_by(Target.name, desc(Alert.created_at))
+            .all()
+        )
+    return [
+        {
+            "target_name": name,
+            "alert_type": alert.alert_type,
+            "message": alert.message,
+            "created_at": local_dt(alert.created_at),
+        }
+        for alert, name in rows
+    ]
 
 
 def get_uptime_timeline(target_id: int, days: int = UPTIME_TIMELINE_DAYS) -> list[dict]:

@@ -1,10 +1,11 @@
+import asyncio
 import json
 from datetime import datetime, timedelta
 from urllib.parse import urlencode
 
 from nicegui import ui
 
-from app import services
+from app import reports, services
 from app.auth import (
     attempt_login,
     clear_session_authentication,
@@ -165,6 +166,25 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
     def build_genel_bakis() -> None:
         with containers["genel-bakis"]:
             genel_bakis_update_label = ui.label("").classes("text-caption text-grey")
+
+            async def handle_download_report() -> None:
+                pdf_button.set_enabled(False)
+                pdf_spinner.set_visibility(True)
+                try:
+                    pdf_bytes = await asyncio.to_thread(reports.generate_monthly_pdf_report)
+                    filename = f"arobserver-rapor-{datetime.now().strftime('%Y-%m-%d')}.pdf"
+                    ui.download.content(pdf_bytes, filename=filename, media_type="application/pdf")
+                except Exception:
+                    ui.notify("PDF rapor oluşturulamadı.", type="negative")
+                    raise
+                finally:
+                    pdf_button.set_enabled(True)
+                    pdf_spinner.set_visibility(False)
+
+            with ui.row().classes("items-center gap-2"):
+                pdf_button = ui.button("PDF Raporu İndir", icon="download", on_click=handle_download_report)
+                pdf_spinner = ui.spinner(size="1.5em")
+                pdf_spinner.set_visibility(False)
 
             with ui.element("div").classes("w-full grid grid-cols-1 md:grid-cols-2 gap-4"):
                 with ui.column().classes("gap-1"):

@@ -57,7 +57,10 @@ def render_target_card(
 ) -> None:
     with ui.card().classes("w-full"):
         with ui.row().classes("items-center justify-between w-full"):
-            ui.link(card["name"], f"/targets/{card['id']}").classes("text-h6")
+            with ui.row().classes("items-center gap-1"):
+                ui.link(card["name"], f"/targets/{card['id']}").classes("text-h6")
+                if card["has_open_alerts"]:
+                    ui.icon("error", color="red").classes("text-xl").tooltip("Açık uyarı var")
             with ui.row().classes("items-center gap-1"):
                 ui.button(icon="edit", on_click=lambda: on_edit(card["id"])).props("flat dense round")
                 _grade_badge(card["letter_grade"])
@@ -169,7 +172,11 @@ def render_overview_summary(summary: dict) -> None:
 
 
 def render_grade_distribution(distribution: dict) -> ui.echart:
-    data = [{"name": grade, "value": count, "itemStyle": {"color": GRADE_HEX_COLORS[grade]}} for grade, count in distribution.items()]
+    data = [
+        {"name": grade, "value": count, "itemStyle": {"color": GRADE_HEX_COLORS[grade]}}
+        for grade, count in distribution.items()
+        if count > 0
+    ]
     options = {
         "tooltip": {"trigger": "item"},
         "legend": {"bottom": 0},
