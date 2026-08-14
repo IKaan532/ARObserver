@@ -330,6 +330,8 @@ def get_target_detail(target_id: int) -> dict | None:
                 {"alert_type": alert.alert_type, "message": alert.message, "created_at": local_dt(alert.created_at)}
                 for alert in open_alerts
             ],
+            "ct_log_result": target.ct_log_result,
+            "ct_log_checked_at": local_dt(target.ct_log_checked_at) if target.ct_log_checked_at else None,
         }
 
 

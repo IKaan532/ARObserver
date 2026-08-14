@@ -64,6 +64,19 @@ def evaluate_tls_certificate(tls: dict) -> dict | None:
                 _deduction("expiring_under_30_days", "tls_certificate", rule["points"], rule["message"].format(days=days))
             )
 
+        chain = tls.get("chain") or []
+        leaf = chain[0] if chain else None
+        if leaf:
+            if leaf.get("signature_algorithm") == "sha1":
+                rule = TLS_CERTIFICATE_RULES["weak_signature"]
+                deductions.append(_deduction("weak_signature", "tls_certificate", rule["points"], rule["message"]))
+            key_bits = leaf.get("key_bits")
+            if leaf.get("key_type") == "RSA" and key_bits is not None and key_bits < 2048:
+                rule = TLS_CERTIFICATE_RULES["weak_key"]
+                deductions.append(
+                    _deduction("weak_key", "tls_certificate", rule["points"], rule["message"].format(bits=key_bits))
+                )
+
     return _finalize("tls_certificate", deductions)
 
 

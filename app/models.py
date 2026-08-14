@@ -21,6 +21,8 @@ class Target(Base):
     baseline_fingerprint: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
     deep_check_result: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
     deep_check_at: Mapped[Optional[datetime]] = mapped_column(default=None)
+    ct_log_result: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
+    ct_log_checked_at: Mapped[Optional[datetime]] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
 

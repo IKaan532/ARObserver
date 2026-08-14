@@ -522,6 +522,59 @@ def render_status_table(last_check: dict | None) -> None:
                 _render_value_cell(str(value))
 
 
+def render_certificate_chain(chain: list[dict]) -> None:
+    if not chain:
+        ui.label("Sertifika zinciri verisi yok.").classes("text-caption text-grey")
+        return
+
+    layers = list(reversed(chain))
+    total = len(layers)
+    for index, cert in enumerate(layers):
+        if index == 0:
+            role = "Kök"
+        elif index == total - 1:
+            role = "Yaprak"
+        else:
+            role = "Ara"
+        title = f"{role}: {cert.get('subject_cn') or '(CN yok)'}"
+        with ui.expansion(title).classes("w-full"):
+            with ui.column().classes("w-full gap-1"):
+                for label, value in (
+                    ("Veren", cert.get("issuer_cn")),
+                    ("Geçerlilik Başlangıcı", cert.get("valid_from")),
+                    ("Geçerlilik Bitişi", cert.get("valid_to")),
+                    ("Seri No", cert.get("serial_number")),
+                    ("İmza Algoritması", cert.get("signature_algorithm")),
+                    ("Anahtar", f"{cert.get('key_type')} {cert.get('key_bits')} bit" if cert.get("key_bits") else cert.get("key_type")),
+                    ("SHA-256 Fingerprint", cert.get("sha256_fingerprint")),
+                ):
+                    with ui.row().classes("w-full justify-between items-center border-b"):
+                        ui.label(label).classes("text-weight-medium")
+                        _render_value_cell(str(value))
+                if cert.get("san"):
+                    with ui.row().classes("w-full justify-between items-center border-b"):
+                        ui.label("SAN").classes("text-weight-medium")
+                        _render_value_cell(", ".join(cert["san"]))
+
+
+def render_ct_log_result(result: dict | None, checked_at: str | None) -> None:
+    if result is None:
+        ui.label("Henüz Certificate Transparency verisi yok.").classes("text-caption text-grey")
+        return
+    if result.get("error"):
+        ui.label(f"Sorgu başarısız: {result['error']}").classes("text-caption text-orange")
+        return
+    discovered = result.get("discovered_names") or []
+    if checked_at:
+        ui.label(f"Son sorgu: {checked_at}").classes("text-caption text-grey")
+    if not discovered:
+        ui.label("Bilinmeyen alt alan adı bulunamadı.").classes("text-caption text-grey")
+        return
+    ui.label(f"{len(discovered)} bilinmeyen alt alan adı keşfedildi:").classes("text-caption")
+    for name in discovered:
+        ui.label(f"- {name}").classes("text-caption")
+
+
 def render_content_section(content_result: dict | None, on_reset: Callable[[], None]) -> None:
     ui.label("İçerik Bütünlüğü").classes("text-h6 q-mt-md")
 

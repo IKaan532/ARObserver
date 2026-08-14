@@ -48,6 +48,19 @@ docker compose up --build -d deepcheck
 Derin kontrol sonucu hedef başına tek kayıt olarak saklanır (her çalıştırmada
 üstüne yazılır, geçmiş tutulmaz) ve skora dahil edilmez.
 
+### Sertifika Zinciri ve Certificate Transparency
+
+Hedef detay sayfasında, HTTPS uygulanabilirse tam sertifika zinciri (yaprak →
+ara → kök) katmanlı bir liste olarak gösterilir — her sertifika için veren,
+geçerlilik tarihleri, seri no, imza algoritması, anahtar tipi/uzunluğu ve
+SHA-256 fingerprint. SHA-1 imza veya 2048 bitten kısa RSA anahtarı tespit
+edilirse skor düşer (mevcut "TLS Sertifika Geçerliliği" kategorisinde).
+
+Certificate Transparency (crt.sh üzerinden bilinmeyen alt alan adı keşfi)
+**varsayılan olarak KAPALI**dır — `CT_LOG_CHECK_ENABLED=true` ile açılabilir.
+Açıkken hedef başına günde en fazla 1 sorgu yapılır (sonuç `Target` üzerinde
+önbelleklenir); kapalıyken crt.sh'a hiç istek atılmaz.
+
 ### Kimlik Doğrulama
 
 Panel ve `/api/v1` uçları tek bir yönetici şifresiyle korunur. Şifre `.env`'de
@@ -89,6 +102,7 @@ doğrulayabilirsiniz.
 | `DEEPCHECK_SERVICE_URL` | Derin kontrol servisinin adresi | `http://deepcheck:8001` |
 | `ADMIN_PASSWORD_HASH` | Yönetici şifresinin hash'i (`python -m cli.hash_password` ile üretilir) | boşsa geçici şifre üretilir |
 | `STORAGE_SECRET` | Oturum çerezlerini imzalamak için gizli anahtar | boşsa geçici üretilir (kalıcı değil) |
+| `CT_LOG_CHECK_ENABLED` | Certificate Transparency (crt.sh) alt alan adı keşfi — hedef başına günde en fazla 1 sorgu | `false` |
 
 ## Yerel Geliştirme (Docker'sız)
 

@@ -9,3 +9,4 @@ pyyaml
 python-multipart
 dnspython
 reportlab
+cryptography

@@ -1,7 +1,12 @@
+import hashlib
 import socket
 import ssl
 from datetime import datetime, timezone
 from urllib.parse import urlparse
+
+from cryptography import x509
+from cryptography.hazmat.primitives.asymmetric import dsa, ec, rsa
+from cryptography.x509.oid import NameOID
 
 CERT_DATE_FORMAT = "%b %d %H:%M:%S %Y %Z"
 
@@ -19,6 +24,54 @@ def _flatten_name(name_tuples) -> dict:
         for key, value in rdn:
             parts[key] = value
     return parts
+
+
+def _common_name(name: x509.Name) -> str | None:
+    attrs = name.get_attributes_for_oid(NameOID.COMMON_NAME)
+    return attrs[0].value if attrs else None
+
+
+def _key_info(public_key) -> tuple[str, int | None]:
+    if isinstance(public_key, rsa.RSAPublicKey):
+        return "RSA", public_key.key_size
+    if isinstance(public_key, ec.EllipticCurvePublicKey):
+        return f"EC ({public_key.curve.name})", public_key.key_size
+    if isinstance(public_key, dsa.DSAPublicKey):
+        return "DSA", public_key.key_size
+    return type(public_key).__name__, None
+
+
+def _parse_certificate(der: bytes) -> dict:
+    cert = x509.load_der_x509_certificate(der)
+    key_type, key_bits = _key_info(cert.public_key())
+    try:
+        san = cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value.get_values_for_type(
+            x509.DNSName
+        )
+    except x509.ExtensionNotFound:
+        san = []
+    return {
+        "subject_cn": _common_name(cert.subject),
+        "issuer_cn": _common_name(cert.issuer),
+        "valid_from": cert.not_valid_before_utc.isoformat(),
+        "valid_to": cert.not_valid_after_utc.isoformat(),
+        "serial_number": format(cert.serial_number, "X"),
+        "signature_algorithm": cert.signature_hash_algorithm.name if cert.signature_hash_algorithm else None,
+        "key_type": key_type,
+        "key_bits": key_bits,
+        "sha256_fingerprint": hashlib.sha256(der).hexdigest(),
+        "san": san,
+    }
+
+
+def extract_certificate_chain(chain: list[bytes]) -> list[dict]:
+    certificates = []
+    for der in chain:
+        try:
+            certificates.append(_parse_certificate(der))
+        except ValueError:
+            continue
+    return certificates
 
 
 def _is_weak_cipher(cipher_name: str | None) -> bool:
@@ -75,6 +128,7 @@ def check_tls(url: str, timeout: float = 10.0) -> dict:
             with context.wrap_socket(sock, server_hostname=hostname) as ssock:
                 cert = ssock.getpeercert()
                 cipher_name, negotiated_protocol, _ = ssock.cipher() or (None, None, None)
+                raw_chain = ssock.get_verified_chain()
     except OSError as exc:
         return {
             "applicable": True,
@@ -90,8 +144,11 @@ def check_tls(url: str, timeout: float = 10.0) -> dict:
             "weak_cipher": None,
             "old_protocols_supported": None,
             "tls_1_3_supported": None,
+            "chain": [],
             "error": str(exc),
         }
+
+    chain = extract_certificate_chain(raw_chain)
 
     subject = _flatten_name(cert.get("subject", ()))
     issuer = _flatten_name(cert.get("issuer", ()))
@@ -117,5 +174,6 @@ def check_tls(url: str, timeout: float = 10.0) -> dict:
         "old_protocols_supported": old_protocols_supported,
         "old_protocols_detail": versions["old_protocols"],
         "tls_1_3_supported": versions["tls_1_3_supported"],
+        "chain": chain,
         "error": None,
     }

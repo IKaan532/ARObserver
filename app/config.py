@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    ct_log_check_enabled: bool = False
+
     @property
     def cert_expiry_warn_days_list(self) -> list[int]:
         return [int(value) for value in self.cert_expiry_warn_days.split(",") if value]
@@ -33,7 +35,7 @@ class Settings(BaseSettings):
 
 settings = Settings()
 
-SCORING_VERSION = 6
+SCORING_VERSION = 7
 
 SCORE_CATEGORIES = {
     "tls_certificate": {"label": "TLS Sertifika Geçerliliği", "max_points": 25},
@@ -54,6 +56,8 @@ TLS_CERTIFICATE_RULES = {
     "expiring_under_7_days": {"points": 15, "message": "TLS sertifikasının bitişine {days} günden az kaldı"},
     "expiring_under_14_days": {"points": 10, "message": "TLS sertifikasının bitişine {days} günden az kaldı"},
     "expiring_under_30_days": {"points": 5, "message": "TLS sertifikasının bitişine {days} gün kaldı"},
+    "weak_signature": {"points": 10, "message": "Sertifika SHA-1 imza kullanıyor"},
+    "weak_key": {"points": 10, "message": "Sertifika anahtar uzunluğu {bits} bit (2048 bitten az)"},
 }
 
 SECURITY_HEADER_RULES = {

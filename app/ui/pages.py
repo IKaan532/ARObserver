@@ -12,6 +12,7 @@ from app.auth import (
     is_safe_redirect_path,
     mark_session_authenticated,
 )
+from app.config import settings
 from app.scheduler import is_target_running, trigger_manual_check
 from app.ui.components import (
     build_line_chart,
@@ -19,7 +20,9 @@ from app.ui.components import (
     render_active_filters,
     render_alerts,
     render_certificate_calendar,
+    render_certificate_chain,
     render_content_section,
+    render_ct_log_result,
     render_deep_check_result,
     render_downtime_incidents,
     render_event_feed,
@@ -523,6 +526,15 @@ async def detail_page(target_id: int) -> None:
 
     ui.label("Skor Kırılımı").classes("text-h6")
     render_score_breakdown(detail["last_check"])
+
+    ui.label("Sertifika Zinciri").classes("text-h6")
+    render_certificate_chain(
+        ((detail["last_check"] or {}).get("tls_result") or {}).get("chain") or []
+    )
+
+    if settings.ct_log_check_enabled:
+        ui.label("Certificate Transparency (deneysel)").classes("text-h6")
+        render_ct_log_result(detail["ct_log_result"], detail["ct_log_checked_at"])
 
     window_start = datetime.utcnow() - timedelta(minutes=services.CHART_WINDOW_MINUTES)
     points = services.get_chart_points(target_id)

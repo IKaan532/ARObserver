@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
@@ -9,6 +10,7 @@ from sqlalchemy import desc
 
 from app.alerting.rules import cleanup_legacy_cert_expiry_alerts, evaluate_rules, notify
 from app.checks.content import check_content, compare_fingerprint
+from app.checks.ct_log import check_certificate_transparency
 from app.checks.dns import check_dns, check_dns_hygiene
 from app.checks.headers import check_headers
 from app.checks.reachability import check_reachability
@@ -189,6 +191,37 @@ async def run_target_check(target_id: int) -> None:
         notify(new_alerts)
 
     logger.info("target %s checked: score=%s grade=%s", url, scoring["score"], scoring["letter_grade"])
+
+    if settings.ct_log_check_enabled:
+        await _maybe_check_certificate_transparency(target_id, url, tls)
+
+
+async def _maybe_check_certificate_transparency(target_id: int, url: str, tls: dict) -> None:
+    now = datetime.utcnow()
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None:
+            return
+        if target.ct_log_checked_at is not None and now - target.ct_log_checked_at < timedelta(hours=24):
+            return
+
+    hostname = urlparse(url).hostname
+    if not hostname:
+        return
+
+    known_names = {hostname}
+    chain = tls.get("chain") or []
+    if chain:
+        known_names.update(chain[0].get("san") or [])
+
+    result = await asyncio.to_thread(check_certificate_transparency, hostname, known_names)
+
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is not None:
+            target.ct_log_result = result
+            target.ct_log_checked_at = datetime.utcnow()
+            db.commit()
 
 
 def cleanup_old_records() -> None:
