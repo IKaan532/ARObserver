@@ -3,6 +3,7 @@ import secrets
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from nicegui import app as nicegui_app
 from nicegui import ui
 from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
@@ -13,6 +14,7 @@ from app.config import settings
 from app.database import Base, engine, sync_schema
 from app import models
 from app.scheduler import start_scheduler, stop_scheduler
+from app.ui.components import COLOR_TOKENS
 import app.ui.pages  # noqa: F401 registers NiceGUI page routes
 
 logger = logging.getLogger(__name__)
@@ -56,4 +58,14 @@ if not storage_secret:
 app.add_middleware(AuthMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=storage_secret)
 
-ui.run_with(app, title="ARObserver", language="tr", storage_secret=storage_secret)
+nicegui_app.colors(
+    primary=COLOR_TOKENS["primary"],
+    dark=COLOR_TOKENS["bg_canvas"],
+    dark_page=COLOR_TOKENS["bg_canvas"],
+    positive=COLOR_TOKENS["good"],
+    negative=COLOR_TOKENS["bad"],
+    warning=COLOR_TOKENS["warn"],
+    info=COLOR_TOKENS["neutral"],
+)
+
+ui.run_with(app, title="ARObserver", language="tr", storage_secret=storage_secret, dark=True)
