@@ -10,6 +10,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from app import services
+from app.config import SCORE_CATEGORIES
 
 pdfmetrics.registerFont(TTFont("Vera", "Vera.ttf"))
 pdfmetrics.registerFont(TTFont("Vera-Bold", "VeraBd.ttf"))
@@ -93,6 +94,25 @@ def generate_monthly_pdf_report() -> bytes:
         )
     story.append(_table(score_rows))
     story.append(Spacer(1, 0.5 * cm))
+
+    story.append(Paragraph("Skor Kırılımı", styles["Heading2"]))
+    for entry in services.get_fleet_score_breakdowns():
+        story.append(Paragraph(entry["name"], styles["Heading2"]))
+        result = entry["result"]
+        if result is None or result["breakdown"] is None:
+            reason = result["reasons"][0] if result and result["reasons"] else "Henüz kontrol verisi yok."
+            story.append(Paragraph(reason, styles["Normal"]))
+            story.append(Spacer(1, 0.3 * cm))
+            continue
+        breakdown_rows = [["Kategori", "Puan", "Kayıp Nedenleri"]]
+        for category, info in result["breakdown"].items():
+            if info is None:
+                continue
+            reasons = "<br/>".join(f"-{d['points']} puan: {d['message']}" for d in info["deductions"]) or "-"
+            breakdown_rows.append([SCORE_CATEGORIES[category]["label"], f"{info['earned']}/{info['max']}", reasons])
+        story.append(_table(breakdown_rows, col_widths=[4 * cm, 2 * cm, USABLE_WIDTH - 6 * cm]))
+        story.append(Spacer(1, 0.3 * cm))
+    story.append(Spacer(1, 0.2 * cm))
 
     story.append(Paragraph("Güvenlik Başlığı Matrisi", styles["Heading2"]))
     matrix_rows = [["Hedef", *header_matrix["headers"]]]

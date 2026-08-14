@@ -10,7 +10,7 @@ from app.checks.headers import SECURITY_HEADERS
 from app.config import settings
 from app.database import SessionLocal
 from app.models import Alert, Check, Target
-from app.scoring import letter_grade
+from app.scoring import letter_grade, recompute_score_breakdown
 
 _deep_check_running: set[int] = set()
 
@@ -230,6 +230,7 @@ def delete_target(target_id: int) -> None:
 
 def _serialize_check(check: Check) -> dict:
     return {
+        "id": check.id,
         "checked_at": local_dt(check.checked_at),
         "status_code": check.status_code,
         "response_time_ms": check.response_time_ms,
@@ -304,6 +305,48 @@ def get_deep_check_result(target_id: int) -> dict | None:
             "result": target.deep_check_result,
             "checked_at": local_dt(target.deep_check_at) if target.deep_check_at else None,
         }
+
+
+CHECK_HISTORY_LIMIT = 30
+
+
+def get_check_history(target_id: int, limit: int = CHECK_HISTORY_LIMIT) -> list[dict]:
+    with SessionLocal() as db:
+        rows = (
+            db.query(Check.id, Check.checked_at, Check.score, Check.letter_grade)
+            .filter(Check.target_id == target_id)
+            .order_by(desc(Check.checked_at))
+            .limit(limit)
+            .all()
+        )
+    return [
+        {
+            "id": check_id,
+            "checked_at": local_dt(checked_at),
+            "label": f"{local_dt(checked_at)} — {score if score is not None else '-'} ({letter_grade or '-'})",
+        }
+        for check_id, checked_at, score, letter_grade in rows
+    ]
+
+
+def get_check_by_id(check_id: int) -> dict | None:
+    with SessionLocal() as db:
+        check = db.get(Check, check_id)
+        return _serialize_check(check) if check else None
+
+
+def get_previous_check(target_id: int, before_check_id: int) -> dict | None:
+    with SessionLocal() as db:
+        reference = db.query(Check.checked_at).filter(Check.id == before_check_id).scalar()
+        if reference is None:
+            return None
+        check = (
+            db.query(Check)
+            .filter(Check.target_id == target_id, Check.checked_at < reference)
+            .order_by(desc(Check.checked_at))
+            .first()
+        )
+    return _serialize_check(check) if check else None
 
 
 def get_target_detail(target_id: int) -> dict | None:
@@ -564,6 +607,18 @@ def get_fleet_uptime_stats() -> dict[int, dict]:
                     stats[target_id][label] = round(100 * ups.get(target_id, 0) / total, 1)
 
     return stats
+
+
+def get_fleet_score_breakdowns() -> list[dict]:
+    with SessionLocal() as db:
+        targets = db.query(Target.id, Target.name).order_by(Target.name).all()
+        last_checks = get_latest_checks_by_target(db)
+    breakdowns = []
+    for target_id, name in targets:
+        last_check = last_checks.get(target_id)
+        result = recompute_score_breakdown(_serialize_check(last_check)) if last_check else None
+        breakdowns.append({"target_id": target_id, "name": name, "result": result})
+    return breakdowns
 
 
 def get_fleet_open_alerts() -> list[dict]:

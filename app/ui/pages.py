@@ -525,7 +525,27 @@ async def detail_page(target_id: int) -> None:
     render_status_table(detail["last_check"])
 
     ui.label("Skor Kırılımı").classes("text-h6")
-    render_score_breakdown(detail["last_check"])
+
+    check_history = services.get_check_history(target_id)
+    default_check_id = detail["last_check"]["id"] if detail["last_check"] else None
+
+    if check_history:
+        check_selector = ui.select(
+            {entry["id"]: entry["label"] for entry in check_history},
+            value=default_check_id,
+            label="Kontrol Seç",
+        ).classes("min-w-[320px]")
+
+    @ui.refreshable
+    def render_breakdown_section() -> None:
+        selected_id = check_selector.value if check_history else default_check_id
+        selected_check = services.get_check_by_id(selected_id) if selected_id else None
+        previous_check = services.get_previous_check(target_id, selected_id) if selected_id else None
+        render_score_breakdown(selected_check, previous_check)
+
+    render_breakdown_section()
+    if check_history:
+        check_selector.on_value_change(lambda e: render_breakdown_section.refresh())
 
     ui.label("Sertifika Zinciri").classes("text-h6")
     render_certificate_chain(

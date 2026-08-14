@@ -406,13 +406,30 @@ def _render_value_cell(value: str) -> None:
             ui.button(icon="content_copy", on_click=lambda: _copy_to_clipboard(value)).props("flat dense round size=sm")
 
 
-def render_score_breakdown(last_check: dict | None) -> None:
+def _trend_indicator(current_earned: int, previous_earned: int | None) -> None:
+    if previous_earned is None:
+        return
+    if current_earned > previous_earned:
+        ui.icon("arrow_upward", color="green").classes("text-sm")
+    elif current_earned < previous_earned:
+        ui.icon("arrow_downward", color="red").classes("text-sm")
+    else:
+        ui.icon("remove", color="grey").classes("text-sm")
+
+
+def render_score_breakdown(last_check: dict | None, previous_check: dict | None = None) -> None:
     result = recompute_score_breakdown(last_check)
     if result is None:
         ui.label("Henüz kontrol verisi yok.")
         return
 
-    ui.label(f"Toplam: {result['score']} ({result['letter_grade']})").classes("text-weight-medium")
+    previous_result = recompute_score_breakdown(previous_check) if previous_check else None
+    previous_breakdown = previous_result["breakdown"] if previous_result and previous_result["breakdown"] else {}
+
+    with ui.row().classes("items-center gap-2"):
+        ui.label(f"Toplam: {result['score']} ({result['letter_grade']})").classes("text-weight-medium")
+        if previous_result is not None:
+            _trend_indicator(result["score"], previous_result["score"])
 
     if result["breakdown"] is None:
         if result["reasons"]:
@@ -423,10 +440,13 @@ def render_score_breakdown(last_check: dict | None) -> None:
         for category, info in result["breakdown"].items():
             if info is None:
                 continue
-            with ui.row().classes("w-full items-center justify-between border-b"):
-                ui.label(f"{SCORE_CATEGORIES[category]['label']}: {info['earned']}/{info['max']}").classes(
-                    "text-weight-medium"
-                )
+            previous_info = previous_breakdown.get(category)
+            with ui.row().classes("w-full items-center gap-2 justify-between border-b"):
+                with ui.row().classes("items-center gap-2"):
+                    ui.label(f"{SCORE_CATEGORIES[category]['label']}: {info['earned']}/{info['max']}").classes(
+                        "text-weight-medium"
+                    )
+                    _trend_indicator(info["earned"], previous_info["earned"] if previous_info else None)
             for deduction in info["deductions"]:
                 with ui.row().classes("w-full items-center gap-2 q-ml-md"):
                     ui.badge("kaldı", color="red").classes("q-pa-sm")
