@@ -13,7 +13,7 @@ from app.auth import (
     mark_session_authenticated,
 )
 from app.config import settings
-from app.scheduler import is_target_running, trigger_manual_check
+from app.scheduler import trigger_manual_check
 from app.ui.components import (
     TOKEN_CSS,
     build_line_chart,
@@ -41,8 +41,11 @@ from app.ui.components import (
     render_score_heatmap,
     render_status_table,
     render_target_card,
+    render_tls_status,
     render_uptime_summary,
     render_uptime_timeline,
+    flash_last_point,
+    shift_time_axis,
     update_line_chart,
     update_stacked_bar_chart,
 )
@@ -391,19 +394,6 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
             group_select.set_value(current)
             on_filter_change()
 
-        def trigger_all() -> None:
-            for card in services.list_target_cards():
-                trigger_manual_check(card["id"])
-            render_cards.refresh()
-
-        def handle_check_now(target_id: int) -> None:
-            result = trigger_manual_check(target_id)
-            if result == "cooldown":
-                ui.notify("Bu hedef için 30 saniye içinde tekrar tetiklenemez, bekleyin.", type="warning")
-            elif result == "running":
-                ui.notify("Kontrol zaten çalışıyor.", type="info")
-            render_cards.refresh()
-
         with containers["hedefler"]:
             with ui.row().classes("items-center gap-4"):
                 grade_select = ui.select(
@@ -423,7 +413,6 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                 search_input = ui.input(
                     label="Ara (ad/url)", value=state["query"], on_change=lambda e: on_filter_change()
                 )
-                ui.button("Tümünü Şimdi Kontrol Et", on_click=trigger_all)
                 ui.button("+ Yeni Hedef", on_click=open_create_dialog)
 
             hedefler_update_label = ui.label("").classes("text-caption text-grey")
@@ -445,9 +434,7 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
 
                 with ui.element("div").classes("w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"):
                     for card in filtered:
-                        render_target_card(
-                            card, is_target_running(card["id"]), handle_check_now, add_group_filter, open_edit_dialog
-                        )
+                        render_target_card(card, add_group_filter, open_edit_dialog)
 
             render_cards()
 
@@ -476,213 +463,317 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
     activate_tab(initial_tab)
 
 
+DETAIL_TABS = ("genel-bakis", "kontrol-durumu", "sertifika", "derin-kontrol", "gecmis")
+
+
 @ui.page("/targets/{target_id}")
-async def detail_page(target_id: int) -> None:
+async def detail_page(target_id: int, tab: str = "genel-bakis") -> None:
     detail = services.get_target_detail(target_id)
     if detail is None:
         ui.label("Hedef bulunamadı").classes("text-h5")
         return
 
+    initial_tab = tab if tab in DETAIL_TABS else "genel-bakis"
+    current_tab = {"value": initial_tab}
+    last_check = detail["last_check"]
+    last_check_status = grade_to_status(last_check["letter_grade"]) if last_check else None
+    cert_days = ((last_check or {}).get("tls_result") or {}).get("days_remaining")
+    cert_warning = cert_days is not None and cert_days < 7
+    open_alert_count = len(detail["open_alerts"])
+
     ui.page_title(f"{detail['name']} — ARObserver")
+
+    def sync_url() -> None:
+        new_url = f"/targets/{target_id}?tab={current_tab['value']}"
+        ui.run_javascript(f"history.replaceState(null, '', {json.dumps(new_url)})")
+
     with render_page_shell(on_logout=_do_logout, back_link=("/", "Hedefler")):
         ui.label(detail["name"]).classes("text-h4")
         ui.label(f"{detail['url']} — kontrol aralığı: {detail['interval_minutes']} dk").classes(
             "text-caption text-grey"
         )
 
-    render_alerts(detail["open_alerts"])
+        last_update_label = ui.label("").classes("text-caption text-grey")
+        last_update_label.set_visibility(False)
 
-    with ui.row().classes("items-center gap-2"):
-        check_button = ui.button("Şimdi Kontrol Et")
-        spinner = ui.spinner(size="1.5em")
-        spinner.set_visibility(is_target_running(target_id))
+        with ui.tabs().classes("w-full") as tabs:
+            with ui.tab("genel-bakis", label="Genel Bakış"):
+                if open_alert_count:
+                    ui.badge(str(open_alert_count), color="negative").props("floating")
+            ui.tab("kontrol-durumu", label="Kontrol Durumu")
+            with ui.tab("sertifika", label="Sertifika"):
+                if cert_warning:
+                    ui.badge("!", color="negative").props("floating")
+            ui.tab("derin-kontrol", label="Derin Kontrol")
+            ui.tab("gecmis", label="Geçmiş")
 
-    last_update_label = ui.label("").classes("text-caption text-grey")
-    last_update_label.set_visibility(False)
+    with ui.tab_panels(tabs, value=initial_tab).classes("w-full"):
+        with ui.tab_panel("genel-bakis"):
+            genel_bakis_container = ui.column().classes("w-full gap-2")
+        with ui.tab_panel("kontrol-durumu"):
+            kontrol_durumu_container = ui.column().classes("w-full gap-2")
+        with ui.tab_panel("sertifika"):
+            sertifika_container = ui.column().classes("w-full gap-2")
+        with ui.tab_panel("derin-kontrol"):
+            derin_kontrol_container = ui.column().classes("w-full gap-2")
+        with ui.tab_panel("gecmis"):
+            gecmis_container = ui.column().classes("w-full gap-2")
 
-    with render_panel("Kullanılabilirlik"):
-        @ui.refreshable
-        def render_uptime_section() -> None:
-            render_uptime_summary(services.get_uptime_stats(target_id))
-            render_uptime_timeline(services.get_uptime_timeline(target_id))
-            render_downtime_incidents(services.get_downtime_incidents(target_id))
+    containers = {
+        "genel-bakis": genel_bakis_container,
+        "kontrol-durumu": kontrol_durumu_container,
+        "sertifika": sertifika_container,
+        "derin-kontrol": derin_kontrol_container,
+        "gecmis": gecmis_container,
+    }
+    built = {name: False for name in DETAIL_TABS}
+    refreshables = {}
+    chart_state = {
+        "points": [],
+        "charts": {},
+        "charts_built": False,
+        "containers": {},
+        "window_start": datetime.utcnow() - timedelta(minutes=services.CHART_WINDOW_MINUTES),
+    }
 
-        render_uptime_section()
+    def build_genel_bakis() -> None:
+        with containers["genel-bakis"]:
+            render_alerts(detail["open_alerts"])
 
-    with render_panel("Yanıt Süresi Yüzdelikleri (7 gün)"):
-        @ui.refreshable
-        def render_percentiles_section() -> None:
-            render_response_time_percentiles(services.get_response_time_percentiles(target_id))
+            with render_panel("Kullanılabilirlik"):
+                @ui.refreshable
+                def render_uptime_section() -> None:
+                    render_uptime_summary(services.get_uptime_stats(target_id))
+                    render_uptime_timeline(services.get_uptime_timeline(target_id))
 
-        render_percentiles_section()
+                render_uptime_section()
+            refreshables["uptime"] = render_uptime_section
 
-    last_check_status = grade_to_status(detail["last_check"]["letter_grade"]) if detail["last_check"] else None
+            with render_panel("Yanıt Süresi Yüzdelikleri (7 gün)"):
+                @ui.refreshable
+                def render_percentiles_section() -> None:
+                    render_response_time_percentiles(services.get_response_time_percentiles(target_id))
 
-    with render_panel("Son Kontrol Durumu", status=last_check_status):
-        render_status_table(detail["last_check"])
+                render_percentiles_section()
+            refreshables["percentiles"] = render_percentiles_section
 
-    with render_panel("Skor Kırılımı", status=last_check_status):
-        check_history = services.get_check_history(target_id)
-        default_check_id = detail["last_check"]["id"] if detail["last_check"] else None
+            points = services.get_chart_points(target_id)
+            chart_state["points"] = points
+            chart_containers: dict[str, ui.column] = {}
+            for key, title in (
+                ("response_time_ms", "Yanıt Süresi (ms)"),
+                ("score", "Skor"),
+                ("timing", "Zaman Kırılımı"),
+                ("body_size_kb", "Sayfa Boyutu"),
+            ):
+                with render_panel(title):
+                    chart_containers[key] = ui.column().classes("w-full")
+            chart_state["containers"] = chart_containers
 
-        if check_history:
-            check_selector = ui.select(
-                {entry["id"]: entry["label"] for entry in check_history},
-                value=default_check_id,
-                label="Kontrol Seç",
-            ).classes("min-w-[320px]")
+            window_minutes = services.CHART_WINDOW_MINUTES
 
-        @ui.refreshable
-        def render_breakdown_section() -> None:
-            selected_id = check_selector.value if check_history else default_check_id
-            selected_check = services.get_check_by_id(selected_id) if selected_id else None
-            previous_check = services.get_previous_check(target_id, selected_id) if selected_id else None
-            render_score_breakdown(selected_check, previous_check)
+            def build_charts() -> None:
+                charts = chart_state["charts"]
+                pts = chart_state["points"]
+                with chart_containers["response_time_ms"]:
+                    charts["response_time_ms"] = build_line_chart(pts, "response_time_ms", window_minutes)
+                with chart_containers["score"]:
+                    charts["score"] = build_line_chart(pts, "score", window_minutes)
+                with chart_containers["timing"]:
+                    charts["timing"] = build_stacked_bar_chart(pts, window_minutes)
+                with chart_containers["body_size_kb"]:
+                    charts["body_size_kb"] = build_line_chart(pts, "body_size_kb", window_minutes)
+                chart_state["charts_built"] = True
 
-        render_breakdown_section()
-        if check_history:
-            check_selector.on_value_change(lambda e: render_breakdown_section.refresh())
+            chart_state["build_charts"] = build_charts
 
-    with render_panel("Sertifika Zinciri"):
-        render_certificate_chain(
-            ((detail["last_check"] or {}).get("tls_result") or {}).get("chain") or []
-        )
+            if points:
+                build_charts()
+            else:
+                for container in chart_containers.values():
+                    with container:
+                        render_empty_state("Henüz grafik verisi yok.")
 
-    if settings.ct_log_check_enabled:
-        with render_panel("Certificate Transparency (deneysel)"):
-            render_ct_log_result(detail["ct_log_result"], detail["ct_log_checked_at"])
+            def chart_data_tick() -> None:
+                pts = chart_state["points"]
+                since = pts[-1]["checked_at"] if pts else chart_state["window_start"]
+                new_points = services.get_chart_points(target_id, since=since)
+                if not new_points:
+                    return
 
-    window_start = datetime.utcnow() - timedelta(minutes=services.CHART_WINDOW_MINUTES)
-    points = services.get_chart_points(target_id)
-    charts: dict[str, ui.echart] = {}
-    charts_built = {"value": False}
-    chart_containers: dict[str, ui.column] = {}
+                pts.extend(new_points)
+                cutoff = datetime.utcnow() - timedelta(minutes=services.CHART_WINDOW_MINUTES)
+                while pts and pts[0]["checked_at"] < cutoff:
+                    pts.pop(0)
+                if len(pts) > services.MAX_CHART_POINTS:
+                    del pts[: len(pts) - services.MAX_CHART_POINTS]
 
-    for key, title in (
-        ("response_time_ms", "Yanıt Süresi (ms)"),
-        ("score", "Skor"),
-        ("timing", "Zaman Kırılımı"),
-        ("body_size_kb", "Sayfa Boyutu"),
-    ):
-        with render_panel(title):
-            chart_containers[key] = ui.column().classes("w-full")
+                if not chart_state["charts_built"]:
+                    for container in chart_state["containers"].values():
+                        container.clear()
+                    chart_state["build_charts"]()
+                else:
+                    charts = chart_state["charts"]
+                    update_line_chart(charts["response_time_ms"], pts, "response_time_ms")
+                    update_line_chart(charts["score"], pts, "score")
+                    update_stacked_bar_chart(charts["timing"], pts)
+                    update_line_chart(charts["body_size_kb"], pts, "body_size_kb")
+                    flash_last_point(charts["response_time_ms"], "response_time_ms", pts)
+                    flash_last_point(charts["score"], "score", pts)
+                    flash_last_point(charts["body_size_kb"], "body_size_kb", pts)
+                last_update_label.set_text(format_last_update())
+                last_update_label.set_visibility(True)
 
-    def build_charts() -> None:
-        with chart_containers["response_time_ms"]:
-            charts["response_time_ms"] = build_line_chart(points, "response_time_ms")
-        with chart_containers["score"]:
-            charts["score"] = build_line_chart(points, "score")
-        with chart_containers["timing"]:
-            charts["timing"] = build_stacked_bar_chart(points)
-        with chart_containers["body_size_kb"]:
-            charts["body_size_kb"] = build_line_chart(points, "body_size_kb")
-        charts_built["value"] = True
+            def axis_shift_tick() -> None:
+                if not chart_state["charts_built"]:
+                    return
+                charts = chart_state["charts"]
+                shift_time_axis(charts["response_time_ms"], window_minutes)
+                shift_time_axis(charts["score"], window_minutes)
+                shift_time_axis(charts["timing"], window_minutes)
+                shift_time_axis(charts["body_size_kb"], window_minutes)
 
-    if points:
-        build_charts()
-    else:
-        for container in chart_containers.values():
-            with container:
-                render_empty_state("Henüz grafik verisi yok.")
+            chart_state["axis_timer"] = ui.timer(1.0, axis_shift_tick)
+            chart_state["chart_timer"] = ui.timer(10.0, chart_data_tick)
 
-    def handle_reset_baseline() -> None:
-        services.reset_baseline(target_id)
-        trigger_manual_check(target_id)
-        ui.notify("Temel çizgi sıfırlandı, yeni kontrol tetiklendi.", type="info")
+    def build_kontrol_durumu() -> None:
+        with containers["kontrol-durumu"]:
+            with render_panel("Son Kontrol Durumu", status=last_check_status):
+                render_status_table(last_check)
 
-    with render_panel("İçerik Bütünlüğü"):
-        render_content_section(
-            detail["last_check"]["content_result"] if detail["last_check"] else None, handle_reset_baseline
-        )
+            with render_panel("Skor Kırılımı", status=last_check_status):
+                check_history = services.get_check_history(target_id)
+                default_check_id = last_check["id"] if last_check else None
 
-    deep_available, deep_unavailable_reason = await services.check_deep_check_service_available()
-    deep_running_initial = services.is_deep_check_running(target_id)
+                if check_history:
+                    check_selector = ui.select(
+                        {entry["id"]: entry["label"] for entry in check_history},
+                        value=default_check_id,
+                        label="Kontrol Seç",
+                    ).classes("min-w-[320px]")
 
-    with render_panel("Derin Kontrol"):
-        with ui.row().classes("items-center gap-2"):
-            deep_check_button = ui.button("Derin Kontrol")
-            deep_spinner = ui.spinner(size="1.5em")
-            deep_spinner.set_visibility(deep_running_initial)
-        deep_check_button.set_enabled(deep_available and not deep_running_initial)
-        if not deep_available:
-            ui.label(deep_unavailable_reason or "Derin kontrol servisi şu anda erişilemiyor.").classes(
-                "text-caption text-orange"
-            )
+                @ui.refreshable
+                def render_breakdown_section() -> None:
+                    selected_id = check_selector.value if check_history else default_check_id
+                    selected_check = services.get_check_by_id(selected_id) if selected_id else None
+                    previous_check = services.get_previous_check(target_id, selected_id) if selected_id else None
+                    render_score_breakdown(selected_check, previous_check)
 
-        @ui.refreshable
-        def render_deep_check_section() -> None:
-            render_deep_check_result(services.get_deep_check_result(target_id))
+                render_breakdown_section()
+                if check_history:
+                    check_selector.on_value_change(lambda e: render_breakdown_section.refresh())
 
-        render_deep_check_section()
+            def handle_reset_baseline() -> None:
+                services.reset_baseline(target_id)
+                trigger_manual_check(target_id)
+                ui.notify("Temel çizgi sıfırlandı, yeni kontrol tetiklendi.", type="info")
 
-    deep_was_running = {"value": deep_running_initial}
+            with render_panel("İçerik Bütünlüğü"):
+                render_content_section(
+                    last_check["content_result"] if last_check else None, handle_reset_baseline
+                )
 
-    def handle_deep_check() -> None:
-        result = services.trigger_deep_check(target_id)
-        if result == "running":
-            ui.notify("Derin kontrol zaten çalışıyor.", type="info")
-            return
-        deep_was_running["value"] = True
-        deep_check_button.set_enabled(False)
-        deep_spinner.set_visibility(True)
-        ui.notify("Derin kontrol başlatıldı, 10-30 sn sürebilir.", type="info")
+    def build_sertifika() -> None:
+        with containers["sertifika"]:
+            with render_panel("TLS", status=last_check_status):
+                render_tls_status(last_check)
 
-    deep_check_button.on_click(handle_deep_check)
+            with render_panel("Sertifika Zinciri"):
+                render_certificate_chain(((last_check or {}).get("tls_result") or {}).get("chain") or [])
 
-    def deep_check_tick() -> None:
-        running = services.is_deep_check_running(target_id)
-        if running:
-            deep_was_running["value"] = True
-            return
-        if deep_was_running["value"]:
-            deep_was_running["value"] = False
-            deep_spinner.set_visibility(False)
-            deep_check_button.set_enabled(deep_available)
-            render_deep_check_section.refresh()
-            ui.notify("Derin kontrol tamamlandı.", type="positive")
+            if settings.ct_log_check_enabled:
+                with render_panel("Certificate Transparency (deneysel)"):
+                    render_ct_log_result(detail["ct_log_result"], detail["ct_log_checked_at"])
 
-    ui.timer(2.0, deep_check_tick)
+    async def build_derin_kontrol() -> None:
+        with containers["derin-kontrol"]:
+            deep_available, deep_unavailable_reason = await services.check_deep_check_service_available()
+            deep_running_initial = services.is_deep_check_running(target_id)
 
-    def handle_check_now() -> None:
-        result = trigger_manual_check(target_id)
-        if result == "cooldown":
-            ui.notify("30 saniye içinde tekrar tetiklenemez, bekleyin.", type="warning")
-        elif result == "running":
-            ui.notify("Kontrol zaten çalışıyor.", type="info")
-        spinner.set_visibility(is_target_running(target_id))
-        check_button.set_enabled(not is_target_running(target_id))
+            with render_panel("Derin Kontrol"):
+                with ui.row().classes("items-center gap-2"):
+                    deep_check_button = ui.button("Derin Kontrol")
+                    deep_spinner = ui.spinner(size="1.5em")
+                    deep_spinner.set_visibility(deep_running_initial)
+                deep_check_button.set_enabled(deep_available and not deep_running_initial)
+                if not deep_available:
+                    ui.label(deep_unavailable_reason or "Derin kontrol servisi şu anda erişilemiyor.").classes(
+                        "text-caption text-orange"
+                    )
 
-    check_button.on_click(handle_check_now)
+                @ui.refreshable
+                def render_deep_check_section() -> None:
+                    render_deep_check_result(services.get_deep_check_result(target_id))
+
+                render_deep_check_section()
+
+            deep_was_running = {"value": deep_running_initial}
+
+            def handle_deep_check() -> None:
+                result = services.trigger_deep_check(target_id)
+                if result == "running":
+                    ui.notify("Derin kontrol zaten çalışıyor.", type="info")
+                    return
+                deep_was_running["value"] = True
+                deep_check_button.set_enabled(False)
+                deep_spinner.set_visibility(True)
+                ui.notify("Derin kontrol başlatıldı, 10-30 sn sürebilir.", type="info")
+
+            deep_check_button.on_click(handle_deep_check)
+
+            def deep_check_tick() -> None:
+                running = services.is_deep_check_running(target_id)
+                if running:
+                    deep_was_running["value"] = True
+                    return
+                if deep_was_running["value"]:
+                    deep_was_running["value"] = False
+                    deep_spinner.set_visibility(False)
+                    deep_check_button.set_enabled(deep_available)
+                    render_deep_check_section.refresh()
+                    ui.notify("Derin kontrol tamamlandı.", type="positive")
+
+            ui.timer(2.0, deep_check_tick)
+
+    def build_gecmis() -> None:
+        with containers["gecmis"]:
+            with render_panel("Kesinti Geçmişi"):
+                @ui.refreshable
+                def render_downtime_section() -> None:
+                    render_downtime_incidents(services.get_downtime_incidents(target_id))
+
+                render_downtime_section()
+            refreshables["downtime"] = render_downtime_section
+
+    BUILDERS = {
+        "genel-bakis": build_genel_bakis,
+        "kontrol-durumu": build_kontrol_durumu,
+        "sertifika": build_sertifika,
+        "derin-kontrol": build_derin_kontrol,
+        "gecmis": build_gecmis,
+    }
+
+    def activate_tab(name: str) -> None:
+        current_tab["value"] = name
+        if not built[name]:
+            built[name] = True
+            result = BUILDERS[name]()
+            if asyncio.iscoroutine(result):
+                asyncio.ensure_future(result)
+        if "axis_timer" in chart_state:
+            is_active = name == "genel-bakis"
+            chart_state["axis_timer"].active = is_active
+            chart_state["chart_timer"].active = is_active
+        sync_url()
+
+    tabs.on_value_change(lambda e: activate_tab(e.value))
+    activate_tab(initial_tab)
 
     def tick() -> None:
-        running = is_target_running(target_id)
-        spinner.set_visibility(running)
-        check_button.set_enabled(not running)
-        render_uptime_section.refresh()
-        render_percentiles_section.refresh()
-
-        since = points[-1]["checked_at"] if points else window_start
-        new_points = services.get_chart_points(target_id, since=since)
-        if not new_points:
-            return
-
-        points.extend(new_points)
-        cutoff = datetime.utcnow() - timedelta(minutes=services.CHART_WINDOW_MINUTES)
-        while points and points[0]["checked_at"] < cutoff:
-            points.pop(0)
-        if len(points) > services.MAX_CHART_POINTS:
-            del points[: len(points) - services.MAX_CHART_POINTS]
-
-        if not charts_built["value"]:
-            for container in chart_containers.values():
-                container.clear()
-            build_charts()
-        else:
-            update_line_chart(charts["response_time_ms"], points, "response_time_ms")
-            update_line_chart(charts["score"], points, "score")
-            update_stacked_bar_chart(charts["timing"], points)
-            update_line_chart(charts["body_size_kb"], points, "body_size_kb")
-        last_update_label.set_text(format_last_update())
-        last_update_label.set_visibility(True)
+        if built["gecmis"]:
+            refreshables["downtime"].refresh()
+        if built["genel-bakis"]:
+            refreshables["uptime"].refresh()
+            refreshables["percentiles"].refresh()
 
     ui.timer(POLL_INTERVAL_SECONDS, tick)

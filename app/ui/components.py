@@ -1,6 +1,7 @@
+import math
 from collections.abc import Callable
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 from nicegui import ui
 
@@ -268,19 +269,8 @@ def _grade_badge(letter_grade: str | None) -> None:
     render_status_chip(grade_to_status(letter_grade), letter_grade or "-")
 
 
-def render_check_now_button(target_id: int, running: bool, on_click: Callable[[], None]):
-    with ui.row().classes("items-center gap-2"):
-        button = ui.button("Şimdi Kontrol Et", on_click=on_click)
-        spinner = ui.spinner(size="1.5em")
-        spinner.set_visibility(running)
-        button.set_enabled(not running)
-    return button, spinner
-
-
 def render_target_card(
     card: dict,
-    running: bool,
-    on_check_now: Callable[[int], None],
     on_tag_click: Callable[[str], None],
     on_edit: Callable[[int], None],
 ) -> None:
@@ -313,7 +303,6 @@ def render_target_card(
             ui.label(f"Son kontrol: {card['checked_at']}").classes("text-caption ar-mono")
         if card["cert_days_remaining"] is not None:
             ui.label(f"Sertifikaya kalan gün: {card['cert_days_remaining']}").classes("text-caption ar-mono")
-        render_check_now_button(card["id"], running, lambda: on_check_now(card["id"]))
 
 
 def render_active_filters(
@@ -765,7 +754,43 @@ def render_status_table(last_check: dict | None) -> None:
     rows.append(_hygiene_row("DMARC Kaydı", dns_result.get("dmarc_present")))
     rows.append(_hygiene_row("CAA Kaydı", dns_result.get("caa_present")))
 
+    headers_result = last_check["headers_result"] or {}
+    for name in SECURITY_HEADER_LABELS:
+        info = (headers_result.get("security_headers") or {}).get(name, {})
+        present = bool(info.get("present"))
+        rows.append((name, f"Var — {info.get('value')}" if present else "Yok", "good" if present else "bad", False))
+    for name, info in (headers_result.get("info_leak") or {}).items():
+        reveals = bool(info.get("reveals_version"))
+        text = f"Sürüm sızdırıyor: {info.get('value')}" if reveals else "Sorun yok"
+        rows.append((f"{name} (sızıntı)", text, "bad" if reveals else "good", False))
+
+    cookies = headers_result.get("cookies") or []
+    if not cookies:
+        rows.append(("Çerezler", "Çerez kurulmadı.", "neutral", False))
+    else:
+        for cookie in cookies:
+            flags = []
+            if not cookie.get("secure"):
+                flags.append("Secure yok")
+            if not cookie.get("http_only"):
+                flags.append("HttpOnly yok")
+            if cookie.get("same_site") in (None, "None"):
+                flags.append("SameSite=None")
+            flags_text = ", ".join(flags) if flags else "Tüm bayraklar mevcut"
+            rows.append((f"Çerez: {cookie['name']}", flags_text, "neutral" if not flags else "bad", False))
+
+    with ui.column().classes("w-full gap-0"):
+        for label, value, status, mono in rows:
+            _status_row(label, str(value), status, mono)
+
+
+def render_tls_status(last_check: dict | None) -> None:
+    if last_check is None:
+        render_empty_state("Henüz kontrol verisi yok.")
+        return
+
     tls_result = last_check["tls_result"] or {}
+    rows = []
     if tls_result.get("applicable"):
         tls_text = ("Geçerli" if tls_result.get("chain_valid") else "Geçersiz") + f", kalan gün: {tls_result.get('days_remaining')}"
         rows.append(("TLS", tls_text, "good" if tls_result.get("chain_valid") else "bad", False))
@@ -793,31 +818,6 @@ def render_status_table(last_check: dict | None) -> None:
             rows.append(("Şifre Takımı", cipher_text, "bad" if weak_cipher else "neutral", False))
     else:
         rows.append(("TLS", "Uygulanamıyor", "neutral", False))
-
-    headers_result = last_check["headers_result"] or {}
-    for name in SECURITY_HEADER_LABELS:
-        info = (headers_result.get("security_headers") or {}).get(name, {})
-        present = bool(info.get("present"))
-        rows.append((name, f"Var — {info.get('value')}" if present else "Yok", "good" if present else "bad", False))
-    for name, info in (headers_result.get("info_leak") or {}).items():
-        reveals = bool(info.get("reveals_version"))
-        text = f"Sürüm sızdırıyor: {info.get('value')}" if reveals else "Sorun yok"
-        rows.append((f"{name} (sızıntı)", text, "bad" if reveals else "good", False))
-
-    cookies = headers_result.get("cookies") or []
-    if not cookies:
-        rows.append(("Çerezler", "Çerez kurulmadı.", "neutral", False))
-    else:
-        for cookie in cookies:
-            flags = []
-            if not cookie.get("secure"):
-                flags.append("Secure yok")
-            if not cookie.get("http_only"):
-                flags.append("HttpOnly yok")
-            if cookie.get("same_site") in (None, "None"):
-                flags.append("SameSite=None")
-            flags_text = ", ".join(flags) if flags else "Tüm bayraklar mevcut"
-            rows.append((f"Çerez: {cookie['name']}", flags_text, "neutral" if not flags else "bad", False))
 
     with ui.column().classes("w-full gap-0"):
         for label, value, status, mono in rows:
@@ -914,10 +914,14 @@ def _line_color_for(value_key: str, points: list[dict]) -> str:
     return COLOR_TOKENS[grade_to_status(letter_grade(int(last_score)))]
 
 
-def _emphasize_last_point(values: list, color: str) -> list:
-    if not values or values[-1] is None:
-        return values
-    data = list(values)
+def _to_epoch_ms(dt: datetime) -> int:
+    return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+
+
+def _emphasize_last_point(pairs: list, color: str) -> list:
+    if not pairs or pairs[-1][1] is None:
+        return pairs
+    data = list(pairs)
     data[-1] = {
         "value": data[-1],
         "symbolSize": 8,
@@ -926,37 +930,102 @@ def _emphasize_last_point(values: list, color: str) -> list:
     return data
 
 
-def build_line_chart(points: list[dict], value_key: str) -> ui.echart:
-    labels = [point["label"] for point in points]
+SCORE_THRESHOLD_MARKLINE = {
+    "silent": True,
+    "symbol": "none",
+    "lineStyle": {"type": "dashed", "color": COLOR_TOKENS["border_subtle"], "width": 1},
+    "label": {"color": COLOR_TOKENS["text_muted"], "fontSize": 10, "position": "insideEndTop"},
+    "data": [
+        {"yAxis": 60, "label": {"formatter": "D"}},
+        {"yAxis": 70, "label": {"formatter": "C"}},
+        {"yAxis": 80, "label": {"formatter": "B"}},
+        {"yAxis": 90, "label": {"formatter": "A"}},
+    ],
+}
+
+
+def _nice_round_bounds(lo: float, hi: float) -> tuple[float, float, float]:
+    span = hi - lo
+    if span <= 0:
+        return lo, hi, max(abs(hi), 1)
+    magnitude = 10 ** math.floor(math.log10(span))
+    ratio = span / magnitude
+    step = magnitude / 5 if ratio < 2 else magnitude / 2 if ratio < 5 else magnitude
+    lo_rounded = math.floor(lo / step) * step
+    hi_rounded = math.ceil(hi / step) * step
+    if lo_rounded == hi_rounded:
+        hi_rounded += step
+    return lo_rounded, hi_rounded, step
+
+
+def _y_axis_bounds(value_key: str, values: list) -> tuple[float, float, float | None]:
+    if value_key == "score":
+        return (0, 100, None)
+    clean = [v for v in values if v is not None]
+    if not clean:
+        return (0, 1, None)
+    lo, hi = min(clean), max(clean)
+    if lo == hi:
+        pad = max(abs(lo) * 0.1, 1)
+        lo, hi = lo - pad, hi + pad
+    else:
+        pad = (hi - lo) * 0.1
+        lo, hi = lo - pad, hi + pad
+    lo, hi, step = _nice_round_bounds(lo, hi)
+    if min(clean) >= 0:
+        lo = max(lo, 0)
+    return lo, hi, step
+
+
+def _y_axis_options(value_key: str, values: list) -> dict:
+    lo, hi, step = _y_axis_bounds(value_key, values)
+    options = {
+        "type": "value",
+        "min": lo,
+        "max": hi,
+        "axisLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
+        "axisLabel": {"color": COLOR_TOKENS["text_muted"], "fontSize": 11},
+        "splitLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
+    }
+    if step is not None:
+        options["interval"] = step
+    return options
+
+
+def _time_axis_options(now_ms: int, window_minutes: int) -> dict:
+    return {
+        "type": "time",
+        "min": now_ms - window_minutes * 60_000,
+        "max": now_ms,
+        "axisLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
+        "axisLabel": {"color": COLOR_TOKENS["text_muted"], "fontSize": 11, "formatter": "{HH}:{mm}:{ss}"},
+        "splitLine": {"show": False},
+    }
+
+
+def build_line_chart(points: list[dict], value_key: str, window_minutes: int) -> ui.echart:
+    pairs = [[_to_epoch_ms(point["checked_at"]), point[value_key]] for point in points]
     values = [point[value_key] for point in points]
     line_color = _line_color_for(value_key, points)
+    series = {
+        "type": "line",
+        "data": _emphasize_last_point(pairs, line_color),
+        "showSymbol": True,
+        "symbolSize": 4,
+        "lineStyle": {"color": line_color, "width": 2},
+        "itemStyle": {"color": line_color},
+        "areaStyle": {"color": _hex_to_rgba(line_color, 0.12)},
+    }
+    if value_key == "score":
+        series["markLine"] = SCORE_THRESHOLD_MARKLINE
+    now_ms = _to_epoch_ms(datetime.utcnow())
     options = {
         **ECHARTS_DARK_THEME,
         "tooltip": {**TOOLTIP_STYLE, "trigger": "axis"},
-        "xAxis": {
-            "type": "category",
-            "data": labels,
-            "axisLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
-            "axisLabel": {"color": COLOR_TOKENS["text_muted"], "fontSize": 11},
-            "splitLine": {"show": False},
-        },
-        "yAxis": {
-            "type": "value",
-            "axisLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
-            "axisLabel": {"color": COLOR_TOKENS["text_muted"], "fontSize": 11},
-            "splitLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
-        },
-        "series": [
-            {
-                "type": "line",
-                "data": _emphasize_last_point(values, line_color),
-                "showSymbol": True,
-                "symbolSize": 4,
-                "lineStyle": {"color": line_color, "width": 2},
-                "itemStyle": {"color": line_color},
-                "areaStyle": {"color": _hex_to_rgba(line_color, 0.12)},
-            }
-        ],
+        "grid": {"top": 24, "bottom": 32, "left": 48, "right": 16, "containLabel": True},
+        "xAxis": _time_axis_options(now_ms, window_minutes),
+        "yAxis": _y_axis_options(value_key, values),
+        "series": [series],
         "animation": True,
         "animationDuration": 400,
     }
@@ -964,15 +1033,50 @@ def build_line_chart(points: list[dict], value_key: str) -> ui.echart:
 
 
 def update_line_chart(chart: ui.echart, points: list[dict], value_key: str) -> None:
+    pairs = [[_to_epoch_ms(point["checked_at"]), point[value_key]] for point in points]
     values = [point[value_key] for point in points]
     line_color = _line_color_for(value_key, points)
     series = chart.options["series"][0]
-    chart.options["xAxis"]["data"] = [point["label"] for point in points]
-    series["data"] = _emphasize_last_point(values, line_color)
+    series["data"] = _emphasize_last_point(pairs, line_color)
     series["lineStyle"]["color"] = line_color
     series["itemStyle"]["color"] = line_color
     series["areaStyle"]["color"] = _hex_to_rgba(line_color, 0.12)
+    lo, hi, step = _y_axis_bounds(value_key, values)
+    chart.options["yAxis"]["min"] = lo
+    chart.options["yAxis"]["max"] = hi
+    if step is not None:
+        chart.options["yAxis"]["interval"] = step
+    elif "interval" in chart.options["yAxis"]:
+        del chart.options["yAxis"]["interval"]
+    chart.options["animation"] = True
     chart.update()
+
+
+def shift_time_axis(chart: ui.echart, window_minutes: int) -> None:
+    now_ms = _to_epoch_ms(datetime.utcnow())
+    chart.options["animation"] = False
+    chart.options["xAxis"]["max"] = now_ms
+    chart.options["xAxis"]["min"] = now_ms - window_minutes * 60_000
+    chart.update()
+
+
+def flash_last_point(chart: ui.echart, value_key: str, points: list[dict]) -> None:
+    color = _line_color_for(value_key, points)
+    data = chart.options["series"][0]["data"]
+    if not data or not isinstance(data[-1], dict):
+        return
+    data[-1]["itemStyle"] = {"color": color, "borderColor": color, "shadowBlur": 20, "shadowColor": color}
+    data[-1]["symbolSize"] = 14
+    chart.update()
+
+    def _revert() -> None:
+        current_data = chart.options["series"][0]["data"]
+        if current_data and isinstance(current_data[-1], dict):
+            current_data[-1]["itemStyle"] = {"color": color, "borderColor": color}
+            current_data[-1]["symbolSize"] = 8
+            chart.update()
+
+    ui.timer(0.8, _revert, once=True)
 
 
 TIMING_SERIES = [
@@ -986,18 +1090,13 @@ TIMING_SERIES = [
 TIMING_COLOR_RAMP = ["#a371f7", "#539bf5", "#39c5cf", "#b3d334", "#e878c9"]
 
 
-def build_stacked_bar_chart(points: list[dict]) -> ui.echart:
-    labels = [point["label"] for point in points]
+def build_stacked_bar_chart(points: list[dict], window_minutes: int) -> ui.echart:
+    now_ms = _to_epoch_ms(datetime.utcnow())
     options = {
         **ECHARTS_DARK_THEME,
         "tooltip": {**TOOLTIP_STYLE, "trigger": "axis"},
         "legend": {"textStyle": {"color": COLOR_TOKENS["text_muted"]}},
-        "xAxis": {
-            "type": "category",
-            "data": labels,
-            "axisLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
-            "axisLabel": {"color": COLOR_TOKENS["text_muted"], "fontSize": 11},
-        },
+        "xAxis": _time_axis_options(now_ms, window_minutes),
         "yAxis": {
             "type": "value",
             "name": "ms",
@@ -1010,7 +1109,8 @@ def build_stacked_bar_chart(points: list[dict]) -> ui.echart:
                 "name": name,
                 "type": "bar",
                 "stack": "total",
-                "data": [point[key] for point in points],
+                "barWidth": 8,
+                "data": [[_to_epoch_ms(point["checked_at"]), point[key]] for point in points],
                 "itemStyle": {"color": TIMING_COLOR_RAMP[index]},
             }
             for index, (key, name) in enumerate(TIMING_SERIES)
@@ -1022,7 +1122,7 @@ def build_stacked_bar_chart(points: list[dict]) -> ui.echart:
 
 
 def update_stacked_bar_chart(chart: ui.echart, points: list[dict]) -> None:
-    chart.options["xAxis"]["data"] = [point["label"] for point in points]
+    chart.options["animation"] = True
     for index, (key, _name) in enumerate(TIMING_SERIES):
-        chart.options["series"][index]["data"] = [point[key] for point in points]
+        chart.options["series"][index]["data"] = [[_to_epoch_ms(point["checked_at"]), point[key]] for point in points]
     chart.update()
