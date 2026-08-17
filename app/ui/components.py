@@ -45,6 +45,13 @@ TOOLTIP_STYLE = {
     "textStyle": {"color": COLOR_TOKENS["text_primary"]},
 }
 
+CHART_ANIMATION_OPTIONS = {
+    "animation": True,
+    "animationDuration": 500,
+    "animationDurationUpdate": 300,
+    "animationEasingUpdate": "cubicOut",
+}
+
 
 def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     hex_color = hex_color.lstrip("#")
@@ -1026,8 +1033,7 @@ def build_line_chart(points: list[dict], value_key: str, window_minutes: int) ->
         "xAxis": _time_axis_options(now_ms, window_minutes),
         "yAxis": _y_axis_options(value_key, values),
         "series": [series],
-        "animation": True,
-        "animationDuration": 400,
+        **CHART_ANIMATION_OPTIONS,
     }
     return ui.echart(options).classes("w-full h-64")
 
@@ -1048,13 +1054,11 @@ def update_line_chart(chart: ui.echart, points: list[dict], value_key: str) -> N
         chart.options["yAxis"]["interval"] = step
     elif "interval" in chart.options["yAxis"]:
         del chart.options["yAxis"]["interval"]
-    chart.options["animation"] = True
     chart.update()
 
 
 def shift_time_axis(chart: ui.echart, window_minutes: int) -> None:
     now_ms = _to_epoch_ms(datetime.utcnow())
-    chart.options["animation"] = False
     chart.options["xAxis"]["max"] = now_ms
     chart.options["xAxis"]["min"] = now_ms - window_minutes * 60_000
     chart.update()
@@ -1115,14 +1119,12 @@ def build_stacked_bar_chart(points: list[dict], window_minutes: int) -> ui.echar
             }
             for index, (key, name) in enumerate(TIMING_SERIES)
         ],
-        "animation": True,
-        "animationDuration": 400,
+        **CHART_ANIMATION_OPTIONS,
     }
     return ui.echart(options).classes("w-full h-64")
 
 
 def update_stacked_bar_chart(chart: ui.echart, points: list[dict]) -> None:
-    chart.options["animation"] = True
     for index, (key, _name) in enumerate(TIMING_SERIES):
         chart.options["series"][index]["data"] = [[_to_epoch_ms(point["checked_at"]), point[key]] for point in points]
     chart.update()
