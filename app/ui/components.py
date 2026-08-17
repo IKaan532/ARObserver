@@ -5,7 +5,7 @@ from datetime import datetime
 from nicegui import ui
 
 from app.config import SCORE_CATEGORIES
-from app.scoring import recompute_score_breakdown
+from app.scoring import letter_grade, recompute_score_breakdown
 
 COLOR_TOKENS = {
     "bg_canvas": "#0f1115",
@@ -37,11 +37,35 @@ ECHARTS_DARK_THEME = {
     "color": [COLOR_TOKENS["primary"], COLOR_TOKENS["good"], COLOR_TOKENS["warn"], COLOR_TOKENS["bad"], COLOR_TOKENS["neutral"]],
 }
 
+TOOLTIP_STYLE = {
+    "backgroundColor": COLOR_TOKENS["bg_surface_raised"],
+    "borderColor": COLOR_TOKENS["border_subtle"],
+    "borderWidth": 1,
+    "textStyle": {"color": COLOR_TOKENS["text_primary"]},
+}
+
 
 def _hex_to_rgba(hex_color: str, alpha: float) -> str:
     hex_color = hex_color.lstrip("#")
     r, g, b = (int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
     return f"rgba({r}, {g}, {b}, {alpha})"
+
+
+def _interpolate_hex(color_a: str, color_b: str, t: float) -> str:
+    color_a, color_b = color_a.lstrip("#"), color_b.lstrip("#")
+    ra, ga, ba = (int(color_a[i : i + 2], 16) for i in (0, 2, 4))
+    rb, gb, bb = (int(color_b[i : i + 2], 16) for i in (0, 2, 4))
+    r, g, b = (round(a + (b - a) * t) for a, b in ((ra, rb), (ga, gb), (ba, bb)))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+GRADE_GRADIENT_COLORS = {
+    "F": COLOR_TOKENS["bad"],
+    "D": _interpolate_hex(COLOR_TOKENS["bad"], COLOR_TOKENS["warn"], 0.6),
+    "C": COLOR_TOKENS["warn"],
+    "B": _interpolate_hex(COLOR_TOKENS["warn"], COLOR_TOKENS["good"], 0.5),
+    "A": COLOR_TOKENS["good"],
+}
 
 
 TOKEN_CSS = f"""
@@ -375,7 +399,7 @@ def render_overview_summary(summary: dict) -> None:
 
 def render_grade_distribution(distribution: dict) -> None:
     data = [
-        {"name": grade, "value": count, "itemStyle": {"color": COLOR_TOKENS[grade_to_status(grade)]}}
+        {"name": grade, "value": count, "itemStyle": {"color": GRADE_GRADIENT_COLORS.get(grade, COLOR_TOKENS["neutral"])}}
         for grade, count in distribution.items()
         if count > 0
     ]
@@ -384,7 +408,7 @@ def render_grade_distribution(distribution: dict) -> None:
         return
     options = {
         **ECHARTS_DARK_THEME,
-        "tooltip": {"trigger": "item"},
+        "tooltip": {**TOOLTIP_STYLE, "trigger": "item"},
         "legend": {"bottom": 0, "textStyle": {"color": COLOR_TOKENS["text_muted"]}},
         "series": [
             {
@@ -480,21 +504,20 @@ def render_score_heatmap(heatmap: dict) -> None:
     height = max(260, 36 * len(heatmap["targets"]) + grid_top + grid_bottom)
     options = {
         **ECHARTS_DARK_THEME,
-        "tooltip": {"position": "top"},
+        "tooltip": {**TOOLTIP_STYLE, "position": "top"},
         "grid": {"top": grid_top, "bottom": grid_bottom, "left": 120, "right": 20},
         "xAxis": {"type": "category", "data": heatmap["days"], "splitArea": {"show": True}},
         "yAxis": {"type": "category", "data": heatmap["targets"], "splitArea": {"show": True}},
         "visualMap": {
-            "type": "piecewise",
+            "type": "continuous",
+            "min": 0,
+            "max": 100,
+            "calculable": True,
             "orient": "horizontal",
             "left": "center",
             "bottom": 8,
             "textStyle": {"color": COLOR_TOKENS["text_muted"]},
-            "pieces": [
-                {"min": 0, "max": 69.999, "label": "Zayıf", "color": COLOR_TOKENS["bad"]},
-                {"min": 70, "max": 79.999, "label": "Orta", "color": COLOR_TOKENS["warn"]},
-                {"min": 80, "max": 100, "label": "İyi", "color": COLOR_TOKENS["good"]},
-            ],
+            "inRange": {"color": [COLOR_TOKENS["bad"], COLOR_TOKENS["warn"], COLOR_TOKENS["good"]]},
         },
         "series": [{"type": "heatmap", "data": heatmap["data"], "label": {"show": False}}],
     }
@@ -882,28 +905,56 @@ def render_content_section(content_result: dict | None, on_reset: Callable[[], N
     ui.button("Yeni Durumu Temel Al", on_click=on_reset).props("outline")
 
 
+def _line_color_for(value_key: str, points: list[dict]) -> str:
+    if value_key != "score" or not points:
+        return COLOR_TOKENS["text_primary"]
+    last_score = points[-1].get("score")
+    if last_score is None:
+        return COLOR_TOKENS["text_primary"]
+    return COLOR_TOKENS[grade_to_status(letter_grade(int(last_score)))]
+
+
+def _emphasize_last_point(values: list, color: str) -> list:
+    if not values or values[-1] is None:
+        return values
+    data = list(values)
+    data[-1] = {
+        "value": data[-1],
+        "symbolSize": 8,
+        "itemStyle": {"color": color, "borderColor": color},
+    }
+    return data
+
+
 def build_line_chart(points: list[dict], value_key: str) -> ui.echart:
     labels = [point["label"] for point in points]
     values = [point[value_key] for point in points]
+    line_color = _line_color_for(value_key, points)
     options = {
         **ECHARTS_DARK_THEME,
+        "tooltip": {**TOOLTIP_STYLE, "trigger": "axis"},
         "xAxis": {
             "type": "category",
             "data": labels,
             "axisLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
+            "axisLabel": {"color": COLOR_TOKENS["text_muted"], "fontSize": 11},
+            "splitLine": {"show": False},
         },
         "yAxis": {
             "type": "value",
             "axisLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
+            "axisLabel": {"color": COLOR_TOKENS["text_muted"], "fontSize": 11},
             "splitLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
         },
         "series": [
             {
                 "type": "line",
-                "data": values,
-                "showSymbol": False,
-                "lineStyle": {"color": COLOR_TOKENS["primary"]},
-                "itemStyle": {"color": COLOR_TOKENS["primary"]},
+                "data": _emphasize_last_point(values, line_color),
+                "showSymbol": True,
+                "symbolSize": 4,
+                "lineStyle": {"color": line_color, "width": 2},
+                "itemStyle": {"color": line_color},
+                "areaStyle": {"color": _hex_to_rgba(line_color, 0.12)},
             }
         ],
         "animation": True,
@@ -913,8 +964,14 @@ def build_line_chart(points: list[dict], value_key: str) -> ui.echart:
 
 
 def update_line_chart(chart: ui.echart, points: list[dict], value_key: str) -> None:
+    values = [point[value_key] for point in points]
+    line_color = _line_color_for(value_key, points)
+    series = chart.options["series"][0]
     chart.options["xAxis"]["data"] = [point["label"] for point in points]
-    chart.options["series"][0]["data"] = [point[value_key] for point in points]
+    series["data"] = _emphasize_last_point(values, line_color)
+    series["lineStyle"]["color"] = line_color
+    series["itemStyle"]["color"] = line_color
+    series["areaStyle"]["color"] = _hex_to_rgba(line_color, 0.12)
     chart.update()
 
 
@@ -926,23 +983,26 @@ TIMING_SERIES = [
     ("download_ms", "İndirme"),
 ]
 
-TIMING_GRAY_RAMP = ["#20242c", "#3a4051", "#565f76", "#7d879e", "#aab1bd"]
+TIMING_COLOR_RAMP = ["#a371f7", "#539bf5", "#39c5cf", "#b3d334", "#e878c9"]
 
 
 def build_stacked_bar_chart(points: list[dict]) -> ui.echart:
     labels = [point["label"] for point in points]
     options = {
         **ECHARTS_DARK_THEME,
+        "tooltip": {**TOOLTIP_STYLE, "trigger": "axis"},
         "legend": {"textStyle": {"color": COLOR_TOKENS["text_muted"]}},
         "xAxis": {
             "type": "category",
             "data": labels,
             "axisLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
+            "axisLabel": {"color": COLOR_TOKENS["text_muted"], "fontSize": 11},
         },
         "yAxis": {
             "type": "value",
             "name": "ms",
             "axisLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
+            "axisLabel": {"color": COLOR_TOKENS["text_muted"], "fontSize": 11},
             "splitLine": {"lineStyle": {"color": COLOR_TOKENS["border_subtle"]}},
         },
         "series": [
@@ -951,11 +1011,7 @@ def build_stacked_bar_chart(points: list[dict]) -> ui.echart:
                 "type": "bar",
                 "stack": "total",
                 "data": [point[key] for point in points],
-                "itemStyle": {
-                    "color": TIMING_GRAY_RAMP[index],
-                    "borderColor": COLOR_TOKENS["bg_canvas"],
-                    "borderWidth": 1,
-                },
+                "itemStyle": {"color": TIMING_COLOR_RAMP[index]},
             }
             for index, (key, name) in enumerate(TIMING_SERIES)
         ],
