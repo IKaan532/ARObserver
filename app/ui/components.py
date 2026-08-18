@@ -269,9 +269,7 @@ def render_page_shell(on_logout: Callable[[], None], back_link: tuple[str, str] 
                     href, label = back_link
                     ui.button(label, icon="arrow_back", on_click=lambda: ui.navigate.to(href)).props("flat dense")
             with ui.row().classes("items-center gap-2"):
-                ui.button(
-                    "Durum Sayfası", icon="public", on_click=lambda: ui.navigate.to("/durum", new_tab=True)
-                ).props("flat")
+                ui.button("Durum Sayfası", icon="public", on_click=lambda: ui.navigate.to("/durum")).props("flat")
                 ui.button("Çıkış", icon="logout", on_click=on_logout).props("flat")
         yield
 
@@ -949,6 +947,29 @@ def render_ct_log_result(result: dict | None, checked_at: str | None) -> None:
     ui.label(f"{len(discovered)} bilinmeyen alt alan adı keşfedildi:").classes("text-caption")
     for name in discovered:
         ui.label(f"- {name}").classes("text-caption")
+
+
+def render_reputation_result(result: dict | None, checked_at: str | None) -> None:
+    if result is None:
+        render_empty_state("Henüz itibar kontrolü yapılmadı.")
+        return
+
+    def _row(label: str, flagged: bool | None) -> None:
+        if flagged is None:
+            _status_row(label, "Test edilemedi", "neutral", False)
+        elif flagged:
+            _status_row(label, "İşaretli", "bad", False)
+        else:
+            _status_row(label, "Temiz", "good", False)
+
+    with ui.column().classes("w-full gap-0"):
+        _row("DNSBL (Spamhaus)", result.get("dnsbl_flagged"))
+        if result.get("safe_browsing_configured"):
+            _row("Google Safe Browsing", result.get("safe_browsing_flagged"))
+        else:
+            _status_row("Google Safe Browsing", "Yapılandırılmadı", "neutral", False)
+    if checked_at:
+        ui.label(f"Son sorgu: {checked_at}").classes("text-caption").style(f"color: {COLOR_TOKENS['text_muted']}")
 
 
 def render_content_section(content_result: dict | None, on_reset: Callable[[], None]) -> None:

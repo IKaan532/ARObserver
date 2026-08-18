@@ -107,6 +107,8 @@ doğrulayabilirsiniz.
 | `CHECK_RETRY_DELAYS_SECONDS` | Erişilebilirlik kontrolü başarısız olursa deneme aralıkları (virgülle, sn) | `5,15` |
 | `CANARY_URL` | Hedef erişilemediğinde yoklanan güvenilir dış adres — o da başarısızsa hata "ağ sorunu" işaretlenir (uyarı üretilmez, uptime'a katılmaz) | `https://www.google.com` |
 | `SCHEDULER_JITTER_SECONDS` | Hedef kontrollerinin zamanlamasına eklenen rastgele gecikme (0-N sn, aynı anda toplu isteği önler) | `30` |
+| `DNSBL_ZONE` | Hedef IP'sinin işaretli olup olmadığı sorgulanan DNS kara liste bölgesi | `zen.spamhaus.org` |
+| `GOOGLE_SAFE_BROWSING_API_KEY` | Google Safe Browsing API anahtarı — hedef adı zararlı/oltalama olarak işaretli mi kontrolü (boşsa bu kontrol atlanır) | boşsa devre dışı |
 
 ## Yerel Geliştirme (Docker'sız)
 

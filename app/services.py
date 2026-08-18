@@ -396,6 +396,8 @@ def get_target_detail(target_id: int) -> dict | None:
             ],
             "ct_log_result": target.ct_log_result,
             "ct_log_checked_at": local_dt(target.ct_log_checked_at) if target.ct_log_checked_at else None,
+            "reputation_result": target.reputation_result,
+            "reputation_checked_at": local_dt(target.reputation_checked_at) if target.reputation_checked_at else None,
         }
 
 

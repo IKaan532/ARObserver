@@ -122,6 +122,35 @@ def _check_domain_expiry(db: Session, target: Target) -> list[Alert]:
     return [alert]
 
 
+REPUTATION_FLAGGED_ALERT_TYPE = "reputation_flagged"
+
+
+def _check_reputation_flagged(db: Session, target: Target) -> list[Alert]:
+    result = target.reputation_result or {}
+    dnsbl_flagged = bool(result.get("dnsbl_flagged"))
+    safe_browsing_flagged = bool(result.get("safe_browsing_flagged"))
+
+    if not dnsbl_flagged and not safe_browsing_flagged:
+        _resolve_alert(db, target.id, REPUTATION_FLAGGED_ALERT_TYPE)
+        return []
+
+    sources = []
+    if dnsbl_flagged:
+        sources.append("DNSBL (Spamhaus)")
+    if safe_browsing_flagged:
+        sources.append("Google Safe Browsing")
+    message = f"Hedef itibar kara listesinde işaretli: {', '.join(sources)}"
+
+    existing = _open_alert_query(db, target.id, REPUTATION_FLAGGED_ALERT_TYPE).first()
+    if existing is not None:
+        existing.message = message
+        return []
+
+    alert = Alert(target_id=target.id, alert_type=REPUTATION_FLAGGED_ALERT_TYPE, message=message)
+    db.add(alert)
+    return [alert]
+
+
 def cleanup_legacy_cert_expiry_alerts(db: Session) -> None:
     legacy_alerts = (
         db.query(Alert)
@@ -231,6 +260,7 @@ def evaluate_rules(db: Session, target: Target, latest_check: Check) -> list[Ale
     new_alerts += _check_unreachable(db, target, latest_check)
     new_alerts += _check_cert_expiry(db, target, latest_check)
     new_alerts += _check_domain_expiry(db, target)
+    new_alerts += _check_reputation_flagged(db, target)
     new_alerts += _check_score_drop(db, target, previous_check, latest_check)
     new_alerts += _check_missing_headers(db, target, previous_check, latest_check)
     new_alerts += _check_keyword_missing(db, target, latest_check)

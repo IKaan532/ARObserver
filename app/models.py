@@ -28,6 +28,8 @@ class Target(Base):
     domain_expiry_date: Mapped[Optional[datetime]] = mapped_column(default=None)
     domain_expiry_checked_at: Mapped[Optional[datetime]] = mapped_column(default=None)
     public_status_visible: Mapped[bool] = mapped_column(default=False)
+    reputation_result: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
+    reputation_checked_at: Mapped[Optional[datetime]] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
 

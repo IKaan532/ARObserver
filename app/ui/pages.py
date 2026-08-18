@@ -40,6 +40,7 @@ from app.ui.components import (
     render_public_status_banner,
     render_public_status_list,
     render_rankings,
+    render_reputation_result,
     render_response_time_percentiles,
     render_score_breakdown,
     render_score_heatmap,
@@ -734,6 +735,9 @@ async def detail_page(target_id: int, tab: str = "genel-bakis") -> None:
                 render_content_section(
                     last_check["content_result"] if last_check else None, handle_reset_baseline
                 )
+
+            with render_panel("İtibar Kontrolü"):
+                render_reputation_result(detail["reputation_result"], detail["reputation_checked_at"])
 
     def build_sertifika() -> None:
         with containers["sertifika"]:

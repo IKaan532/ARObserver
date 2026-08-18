@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     canary_url: str = "https://www.google.com"
     scheduler_jitter_seconds: int = 30
 
+    dnsbl_zone: str = "zen.spamhaus.org"
+    google_safe_browsing_api_key: str = ""
+
     @property
     def cert_expiry_warn_days_list(self) -> list[int]:
         return [int(value) for value in self.cert_expiry_warn_days.split(",") if value]

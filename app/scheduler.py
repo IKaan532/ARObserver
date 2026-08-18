@@ -13,6 +13,7 @@ from app.checks.content import check_content, compare_fingerprint
 from app.checks.ct_log import check_certificate_transparency
 from app.checks.dns import check_dns, check_dns_hygiene
 from app.checks.domain_expiry import check_domain_expiry
+from app.checks.reputation import check_reputation
 from app.checks.headers import check_headers
 from app.checks.reachability import check_reachability
 from app.checks.redirect import check_https_redirect
@@ -198,6 +199,38 @@ async def run_target_check(target_id: int) -> None:
         await _maybe_check_certificate_transparency(target_id, url, tls)
 
     await _maybe_check_domain_expiry(target_id, url)
+    await _maybe_check_reputation(target_id, url, dns.get("ip_addresses") or [])
+
+
+async def _maybe_check_reputation(target_id: int, url: str, ip_addresses: list[str]) -> None:
+    now = datetime.utcnow()
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None:
+            return
+        if target.reputation_checked_at is not None and now - target.reputation_checked_at < timedelta(hours=24):
+            return
+        previous_result = target.reputation_result or {}
+
+    ipv4 = next((ip for ip in ip_addresses if ip.count(".") == 3), None)
+    result = await check_reputation(ipv4, url)
+
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is not None:
+            target.reputation_checked_at = datetime.utcnow()
+            target.reputation_result = {
+                "dnsbl_flagged": (
+                    result["dnsbl_flagged"] if result["dnsbl_flagged"] is not None else previous_result.get("dnsbl_flagged")
+                ),
+                "safe_browsing_flagged": (
+                    result["safe_browsing_flagged"]
+                    if result["safe_browsing_flagged"] is not None
+                    else previous_result.get("safe_browsing_flagged")
+                ),
+                "safe_browsing_configured": result["safe_browsing_configured"],
+            }
+            db.commit()
 
 
 async def _maybe_check_domain_expiry(target_id: int, url: str) -> None:
