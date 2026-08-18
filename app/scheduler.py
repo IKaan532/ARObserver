@@ -71,7 +71,7 @@ def _target_job_id(target_id: int) -> str:
 
 def schedule_target(target_id: int, interval_minutes: int, run_immediately: bool = True) -> None:
     job_id = _target_job_id(target_id)
-    trigger = IntervalTrigger(minutes=interval_minutes)
+    trigger = IntervalTrigger(minutes=interval_minutes, jitter=settings.scheduler_jitter_seconds)
     existing_job = scheduler.get_job(job_id)
     if existing_job is None:
         kwargs = {"next_run_time": datetime.now()} if run_immediately else {}
@@ -164,6 +164,7 @@ async def run_target_check(target_id: int) -> None:
             response_time_ms=reachability.get("response_time_ms"),
             is_timeout=reachability.get("timeout", False),
             error_message=reachability.get("error"),
+            network_issue=reachability.get("network_issue", False),
             dns_result=dns,
             redirect_result=redirect,
             tls_result=tls,

@@ -299,6 +299,8 @@ def render_target_card(
             render_status_chip("neutral", "Pasif")
         elif card["status_code"]:
             render_status_chip("good", f"HTTP {card['status_code']}")
+        elif card["network_issue"]:
+            render_status_chip("neutral", "Ağ sorunu")
         else:
             render_status_chip("bad", "Erişilemiyor")
         ui.label(card["url"]).classes("text-caption text-grey")
@@ -723,11 +725,21 @@ def render_status_table(last_check: dict | None) -> None:
         render_empty_state("Henüz kontrol verisi yok.")
         return
 
+    if last_check.get("network_issue"):
+        erisilebilirlik_text = "Ağ sorunu (test edilemedi)"
+        erisilebilirlik_status = "neutral"
+    elif last_check["status_code"]:
+        erisilebilirlik_text = f"HTTP {last_check['status_code']}"
+        erisilebilirlik_status = "good"
+    else:
+        erisilebilirlik_text = "Erişilemiyor"
+        erisilebilirlik_status = "bad"
+
     rows = [
         (
             "Erişilebilirlik",
-            f"HTTP {last_check['status_code']}" if last_check["status_code"] else "Erişilemiyor",
-            "good" if last_check["status_code"] else "bad",
+            erisilebilirlik_text,
+            erisilebilirlik_status,
             False,
         ),
         (

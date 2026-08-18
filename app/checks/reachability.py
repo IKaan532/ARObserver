@@ -5,6 +5,8 @@ from urllib.parse import urlparse
 
 import httpx
 
+from app.config import settings
+
 
 def _resolve_dns_timing(hostname: str) -> float | None:
     start = time.perf_counter()
@@ -21,7 +23,7 @@ def _span_ms(timings: dict, key_start: str, key_end: str) -> float | None:
     return None
 
 
-async def check_reachability(url: str, timeout: float = 10.0) -> dict:
+async def _attempt_reachability(url: str, timeout: float) -> dict:
     hostname = urlparse(url).hostname
     dns_ms = await asyncio.to_thread(_resolve_dns_timing, hostname) if hostname else None
 
@@ -46,7 +48,9 @@ async def check_reachability(url: str, timeout: float = 10.0) -> dict:
 
     start = time.perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True, headers={"User-Agent": settings.user_agent}
+        ) as client:
             request = client.build_request("GET", url)
             request.extensions["trace"] = tracer
             response = await client.send(request)
@@ -87,3 +91,29 @@ async def check_reachability(url: str, timeout: float = 10.0) -> dict:
             "error": str(exc),
             "timing": None,
         }
+
+
+async def _check_canary(timeout: float = 5.0) -> bool:
+    try:
+        async with httpx.AsyncClient(timeout=timeout, headers={"User-Agent": settings.user_agent}) as client:
+            response = await client.get(settings.canary_url)
+        return response.status_code < 500
+    except httpx.HTTPError:
+        return False
+
+
+async def check_reachability(url: str, timeout: float = 10.0) -> dict:
+    result = await _attempt_reachability(url, timeout)
+    attempts = 1
+    for delay in settings.check_retry_delays_seconds_list:
+        if result["reachable"]:
+            break
+        await asyncio.sleep(delay)
+        attempts += 1
+        result = await _attempt_reachability(url, timeout)
+
+    result["attempts"] = attempts
+    result["network_issue"] = False
+    if not result["reachable"]:
+        result["network_issue"] = not await _check_canary()
+    return result

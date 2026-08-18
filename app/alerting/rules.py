@@ -43,7 +43,7 @@ def _resolve_alert(db: Session, target_id: int, alert_type: str) -> None:
 def _check_unreachable(db: Session, target: Target, latest_check: Check) -> list[Alert]:
     recent = (
         db.query(Check)
-        .filter(Check.target_id == target.id)
+        .filter(Check.target_id == target.id, Check.network_issue.is_(False))
         .order_by(desc(Check.checked_at))
         .limit(settings.alert_fail_threshold)
         .all()
@@ -187,6 +187,9 @@ def _check_content_integrity(db: Session, target: Target, latest_check: Check) -
 
 
 def evaluate_rules(db: Session, target: Target, latest_check: Check) -> list[Alert]:
+    if latest_check.network_issue:
+        return []
+
     previous_check = (
         db.query(Check)
         .filter(Check.target_id == target.id, Check.id != latest_check.id)

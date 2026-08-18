@@ -23,6 +23,8 @@ class Target(Base):
     deep_check_at: Mapped[Optional[datetime]] = mapped_column(default=None)
     ct_log_result: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
     ct_log_checked_at: Mapped[Optional[datetime]] = mapped_column(default=None)
+    maintenance_start: Mapped[Optional[datetime]] = mapped_column(default=None)
+    maintenance_end: Mapped[Optional[datetime]] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -52,6 +54,7 @@ class Check(Base):
     response_time_ms: Mapped[Optional[float]] = mapped_column(default=None)
     is_timeout: Mapped[bool] = mapped_column(default=False)
     error_message: Mapped[Optional[str]] = mapped_column(String(500), default=None)
+    network_issue: Mapped[bool] = mapped_column(default=False)
 
     dns_result: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
     redirect_result: Mapped[Optional[dict]] = mapped_column(JSON, default=None)

@@ -3,6 +3,8 @@ from html.parser import HTMLParser
 
 import httpx
 
+from app.config import settings
+
 THRESHOLD_RATIO = 0.30
 CRITICAL_FIELDS = ("title", "h1")
 THRESHOLD_FIELDS = ("link_count", "form_count", "text_length")
@@ -109,7 +111,9 @@ def compare_fingerprint(baseline: dict | None, current: dict) -> dict:
 
 async def check_content(url: str, expected_keyword: str | None, timeout: float = 10.0) -> dict:
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True, headers={"User-Agent": settings.user_agent}
+        ) as client:
             response = await client.get(url)
     except httpx.HTTPError as exc:
         return {"content_hash": None, "keyword_found": None, "fingerprint": None, "error": str(exc)}

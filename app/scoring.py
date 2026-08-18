@@ -2,15 +2,83 @@ from app.config import (
     COMPRESSION_RULES,
     CONTENT_INTEGRITY_RULES,
     COOKIE_SECURITY_RULES,
+    CSP_RULES,
     DNS_HYGIENE_RULES,
+    HSTS_RECOMMENDED_MIN_MAX_AGE_SECONDS,
+    HSTS_RULES,
     HTTPS_REDIRECT_RULES,
     INFO_LEAK_RULES,
+    LETTER_GRADE_CEILING_INVALID_CERTIFICATE,
+    LETTER_GRADE_CEILING_NO_FORWARD_SECRECY,
+    LETTER_GRADE_CEILING_WEAK_CIPHER,
+    LETTER_GRADE_CEILING_WEAK_TLS_VERSION,
     LETTER_GRADE_THRESHOLDS,
     SCORE_CATEGORIES,
     SECURITY_HEADER_RULES,
     TLS_CERTIFICATE_RULES,
     TLS_PROTOCOL_RULES,
 )
+
+GRADE_ORDER = ["A", "B", "C", "D", "F"]
+
+
+def _grade_rank(grade: str) -> int:
+    return GRADE_ORDER.index(grade)
+
+
+def _parse_hsts(value: str) -> tuple[int | None, bool]:
+    max_age = None
+    include_subdomains = False
+    for part in value.split(";"):
+        part = part.strip()
+        if part.lower().startswith("max-age="):
+            try:
+                max_age = int(part.split("=", 1)[1].strip())
+            except ValueError:
+                max_age = None
+        elif part.lower() == "includesubdomains":
+            include_subdomains = True
+    return max_age, include_subdomains
+
+
+def _parse_csp_directives(value: str) -> dict[str, list[str]]:
+    directives = {}
+    for part in value.split(";"):
+        part = part.strip()
+        if not part:
+            continue
+        tokens = part.split()
+        directives[tokens[0].lower()] = tokens[1:]
+    return directives
+
+
+def _has_forward_secrecy(tls: dict | None) -> bool:
+    if not tls:
+        return True
+    if tls.get("negotiated_protocol") == "TLSv1.3":
+        return True
+    cipher = (tls.get("cipher_name") or "").upper()
+    return "ECDHE" in cipher or "DHE" in cipher
+
+
+def _letter_grade_ceiling(tls: dict | None) -> tuple[str | None, str | None]:
+    if not tls or not tls.get("applicable"):
+        return None, None
+
+    ceilings = []
+    days_remaining = tls.get("days_remaining")
+    if not tls.get("chain_valid") or (days_remaining is not None and days_remaining < 0):
+        ceilings.append((LETTER_GRADE_CEILING_INVALID_CERTIFICATE, "sertifika süresi dolmuş veya zincir geçersiz"))
+    if tls.get("weak_cipher"):
+        ceilings.append((LETTER_GRADE_CEILING_WEAK_CIPHER, "zayıf şifre takımı kullanılıyor"))
+    if tls.get("old_protocols_supported"):
+        ceilings.append((LETTER_GRADE_CEILING_WEAK_TLS_VERSION, "TLS 1.0 veya 1.1 kabul ediliyor"))
+    if not _has_forward_secrecy(tls):
+        ceilings.append((LETTER_GRADE_CEILING_NO_FORWARD_SECRECY, "ileri gizlilik (forward secrecy) sağlanmıyor"))
+
+    if not ceilings:
+        return None, None
+    return max(ceilings, key=lambda pair: _grade_rank(pair[0]))
 
 
 def letter_grade(score: int) -> str:
@@ -90,6 +158,36 @@ def evaluate_security_headers(headers: dict) -> dict | None:
         info = security_headers.get(name, {})
         if not info.get("present"):
             deductions.append(_deduction(f"missing_{name}", "security_headers", rule["points"], rule["message"]))
+
+    sts_info = security_headers.get("Strict-Transport-Security", {})
+    sts_value = sts_info.get("value")
+    if sts_info.get("present") and sts_value:
+        max_age, include_subdomains = _parse_hsts(sts_value)
+        if max_age is not None and max_age < HSTS_RECOMMENDED_MIN_MAX_AGE_SECONDS:
+            rule = HSTS_RULES["short_max_age"]
+            deductions.append(_deduction("hsts_short_max_age", "security_headers", rule["points"], rule["message"]))
+        if not include_subdomains:
+            rule = HSTS_RULES["missing_include_subdomains"]
+            deductions.append(
+                _deduction("hsts_missing_include_subdomains", "security_headers", rule["points"], rule["message"])
+            )
+
+    csp_info = security_headers.get("Content-Security-Policy", {})
+    csp_value = csp_info.get("value")
+    if csp_info.get("present") and csp_value:
+        directives = _parse_csp_directives(csp_value)
+        all_sources = [source for sources in directives.values() for source in sources]
+        if "'unsafe-inline'" in all_sources:
+            rule = CSP_RULES["unsafe_inline"]
+            deductions.append(_deduction("csp_unsafe_inline", "security_headers", rule["points"], rule["message"]))
+        if "'unsafe-eval'" in all_sources:
+            rule = CSP_RULES["unsafe_eval"]
+            deductions.append(_deduction("csp_unsafe_eval", "security_headers", rule["points"], rule["message"]))
+        if "default-src" not in directives:
+            rule = CSP_RULES["missing_default_src"]
+            deductions.append(
+                _deduction("csp_missing_default_src", "security_headers", rule["points"], rule["message"])
+            )
 
     return _finalize("security_headers", deductions)
 
@@ -223,6 +321,15 @@ CATEGORY_EVALUATORS = {
 def calculate_score(results: dict) -> dict:
     reachability = results.get("reachability") or {}
 
+    if reachability.get("network_issue"):
+        return {
+            "score": None,
+            "letter_grade": None,
+            "reasons": ["Yerel ağ sorunu nedeniyle bu kontrol değerlendirilmedi"],
+            "breakdown": None,
+            "critical_reason": "network_issue",
+        }
+
     if not reachability.get("reachable"):
         suffix = " (zaman aşımı)" if reachability.get("timeout") else ""
         return {
@@ -258,10 +365,16 @@ def calculate_score(results: dict) -> dict:
 
     score = round((earned_total / max_total) * 100) if max_total else 100
     score = max(0, min(100, score))
+    grade = letter_grade(score)
+
+    ceiling_grade, ceiling_reason = _letter_grade_ceiling(results.get("tls"))
+    if ceiling_grade is not None and _grade_rank(ceiling_grade) > _grade_rank(grade):
+        reasons.append(f"Harf notu tavanı uygulandı ({ceiling_grade}): {ceiling_reason}")
+        grade = ceiling_grade
 
     return {
         "score": score,
-        "letter_grade": letter_grade(score),
+        "letter_grade": grade,
         "reasons": reasons,
         "breakdown": breakdown,
         "critical_reason": None,

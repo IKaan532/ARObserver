@@ -103,6 +103,10 @@ doğrulayabilirsiniz.
 | `ADMIN_PASSWORD_HASH` | Yönetici şifresinin hash'i (`python -m cli.hash_password` ile üretilir) | boşsa geçici şifre üretilir |
 | `STORAGE_SECRET` | Oturum çerezlerini imzalamak için gizli anahtar | boşsa geçici üretilir (kalıcı değil) |
 | `CT_LOG_CHECK_ENABLED` | Certificate Transparency (crt.sh) alt alan adı keşfi — hedef başına günde en fazla 1 sorgu | `false` |
+| `USER_AGENT` | Tüm dış isteklerde (hedef kontrolü, canary, crt.sh) gönderilen User-Agent | `ARObserver/1.0 (+https://arnavutkoy.bel.tr)` |
+| `CHECK_RETRY_DELAYS_SECONDS` | Erişilebilirlik kontrolü başarısız olursa deneme aralıkları (virgülle, sn) | `5,15` |
+| `CANARY_URL` | Hedef erişilemediğinde yoklanan güvenilir dış adres — o da başarısızsa hata "ağ sorunu" işaretlenir (uyarı üretilmez, uptime'a katılmaz) | `https://www.google.com` |
+| `SCHEDULER_JITTER_SECONDS` | Hedef kontrollerinin zamanlamasına eklenen rastgele gecikme (0-N sn, aynı anda toplu isteği önler) | `30` |
 
 ## Yerel Geliştirme (Docker'sız)
 

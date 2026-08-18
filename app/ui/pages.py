@@ -293,7 +293,33 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                 ).classes("w-full")
                 active_switch = ui.switch("Aktif", value=target["active"] if is_edit else True)
 
+                with ui.row().classes("w-full gap-2"):
+                    maintenance_start_input = ui.input(label="Bakım Penceresi Başlangıcı (isteğe bağlı)").props(
+                        "type=datetime-local"
+                    ).classes("flex-1")
+                    maintenance_end_input = ui.input(label="Bakım Penceresi Bitişi (isteğe bağlı)").props(
+                        "type=datetime-local"
+                    ).classes("flex-1")
+                    if is_edit and target["maintenance_start"]:
+                        maintenance_start_input.value = services.to_local(target["maintenance_start"]).strftime(
+                            "%Y-%m-%dT%H:%M"
+                        )
+                    if is_edit and target["maintenance_end"]:
+                        maintenance_end_input.value = services.to_local(target["maintenance_end"]).strftime(
+                            "%Y-%m-%dT%H:%M"
+                        )
+
+                def _parse_maintenance_input(value: str) -> datetime | None:
+                    if not value:
+                        return None
+                    return services.local_naive_to_utc(datetime.strptime(value, "%Y-%m-%dT%H:%M"))
+
                 def save() -> None:
+                    maintenance_start = _parse_maintenance_input(maintenance_start_input.value)
+                    maintenance_end = _parse_maintenance_input(maintenance_end_input.value)
+                    if maintenance_start and maintenance_end and maintenance_start >= maintenance_end:
+                        ui.notify("Bakım penceresi başlangıcı bitişten önce olmalı.", type="negative")
+                        return
                     try:
                         if is_edit:
                             services.update_target(
@@ -305,6 +331,8 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                                 keyword_input.value,
                                 active_switch.value,
                                 int(status_input.value),
+                                maintenance_start,
+                                maintenance_end,
                             )
                         else:
                             new_id = services.create_target(
@@ -314,6 +342,8 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                                 list(tags_select.value or []),
                                 keyword_input.value,
                                 int(status_input.value),
+                                maintenance_start,
+                                maintenance_end,
                             )
                             ui.notify(f"Hedef eklendi, ilk kontrol tetiklendi (id {new_id}).", type="positive")
                     except ValueError as exc:

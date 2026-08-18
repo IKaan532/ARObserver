@@ -35,6 +35,10 @@ def local_dt(value: datetime, fmt: str = "%d.%m.%Y %H:%M") -> str:
     return to_local(value).strftime(fmt)
 
 
+def local_naive_to_utc(value: datetime) -> datetime:
+    return value.replace(tzinfo=_display_tz).astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+
 def get_latest_checks_by_target(db) -> dict[int, Check]:
     row_number = func.row_number().over(
         partition_by=Check.target_id, order_by=(desc(Check.checked_at), desc(Check.id))
@@ -76,6 +80,7 @@ def list_target_cards() -> list[dict]:
                     "letter_grade": last_check.letter_grade if last_check else None,
                     "score": last_check.score if last_check else None,
                     "status_code": last_check.status_code if last_check else None,
+                    "network_issue": last_check.network_issue if last_check else False,
                     "checked_at": local_dt(last_check.checked_at) if last_check else None,
                     "cert_days_remaining": cert_days_remaining,
                     "has_open_alerts": target.id in open_alert_target_ids,
@@ -116,6 +121,8 @@ def get_editable_target(target_id: int) -> dict | None:
             "expected_keyword": target.expected_keyword,
             "expected_status": target.expected_status,
             "active": target.active,
+            "maintenance_start": target.maintenance_start,
+            "maintenance_end": target.maintenance_end,
         }
 
 
@@ -140,6 +147,8 @@ def create_target(
     tags: list[str],
     expected_keyword: str | None,
     expected_status: int = 200,
+    maintenance_start: datetime | None = None,
+    maintenance_end: datetime | None = None,
 ) -> int:
     from app.scheduler import schedule_target, trigger_manual_check
 
@@ -153,6 +162,8 @@ def create_target(
             tags=tags,
             expected_keyword=expected_keyword or None,
             expected_status=expected_status,
+            maintenance_start=maintenance_start,
+            maintenance_end=maintenance_end,
         )
         db.add(target)
         db.commit()
@@ -173,6 +184,8 @@ def update_target(
     expected_keyword: str | None,
     active: bool,
     expected_status: int = 200,
+    maintenance_start: datetime | None = None,
+    maintenance_end: datetime | None = None,
 ) -> None:
     from app.scheduler import schedule_target, unschedule_target
 
@@ -190,6 +203,8 @@ def update_target(
         target.expected_keyword = expected_keyword or None
         target.expected_status = expected_status
         target.active = active
+        target.maintenance_start = maintenance_start
+        target.maintenance_end = maintenance_end
         db.commit()
 
     if active:
@@ -233,6 +248,7 @@ def _serialize_check(check: Check) -> dict:
         "id": check.id,
         "checked_at": local_dt(check.checked_at),
         "status_code": check.status_code,
+        "network_issue": check.network_issue,
         "response_time_ms": check.response_time_ms,
         "dns_result": check.dns_result,
         "redirect_result": check.redirect_result,
@@ -566,21 +582,31 @@ def get_score_heatmap(days: int = SCORE_HEATMAP_DAYS) -> dict:
     }
 
 
+def _within_maintenance_window(checked_at: datetime, maintenance_start, maintenance_end) -> bool:
+    if maintenance_start is None or maintenance_end is None:
+        return False
+    return maintenance_start <= checked_at <= maintenance_end
+
+
 def get_uptime_stats(target_id: int) -> dict:
     now = datetime.utcnow()
     with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        maintenance_start = target.maintenance_start if target else None
+        maintenance_end = target.maintenance_end if target else None
         stats = {}
         for label, days in (("uptime_7d", 7), ("uptime_30d", 30)):
             since = now - timedelta(days=days)
             rows = (
-                db.query(Check.status_code)
-                .filter(Check.target_id == target_id, Check.checked_at >= since)
+                db.query(Check.checked_at, Check.status_code)
+                .filter(Check.target_id == target_id, Check.checked_at >= since, Check.network_issue.is_(False))
                 .all()
             )
+            rows = [row for row in rows if not _within_maintenance_window(row[0], maintenance_start, maintenance_end)]
             if not rows:
                 stats[label] = None
                 continue
-            up = sum(1 for (status_code,) in rows if status_code is not None)
+            up = sum(1 for (_checked_at, status_code) in rows if status_code is not None)
             stats[label] = round(100 * up / len(rows), 1)
         return stats
 
@@ -588,16 +614,34 @@ def get_uptime_stats(target_id: int) -> dict:
 def get_fleet_uptime_stats() -> dict[int, dict]:
     now = datetime.utcnow()
     with SessionLocal() as db:
-        targets = db.query(Target.id, Target.name).order_by(Target.name).all()
-        stats = {target_id: {"name": name, "uptime_7d": None, "uptime_30d": None} for target_id, name in targets}
+        targets = (
+            db.query(Target.id, Target.name, Target.maintenance_start, Target.maintenance_end)
+            .order_by(Target.name)
+            .all()
+        )
+        stats = {
+            target_id: {"name": name, "uptime_7d": None, "uptime_30d": None}
+            for target_id, name, _maintenance_start, _maintenance_end in targets
+        }
+        maintenance = {
+            target_id: (maintenance_start, maintenance_end)
+            for target_id, _name, maintenance_start, maintenance_end in targets
+        }
 
         for label, days in (("uptime_7d", 7), ("uptime_30d", 30)):
             since = now - timedelta(days=days)
-            rows = db.query(Check.target_id, Check.status_code).filter(Check.checked_at >= since).all()
+            rows = (
+                db.query(Check.target_id, Check.checked_at, Check.status_code)
+                .filter(Check.checked_at >= since, Check.network_issue.is_(False))
+                .all()
+            )
 
             totals: dict[int, int] = {}
             ups: dict[int, int] = {}
-            for target_id, status_code in rows:
+            for target_id, checked_at, status_code in rows:
+                maintenance_start, maintenance_end = maintenance.get(target_id, (None, None))
+                if _within_maintenance_window(checked_at, maintenance_start, maintenance_end):
+                    continue
                 totals[target_id] = totals.get(target_id, 0) + 1
                 if status_code is not None:
                     ups[target_id] = ups.get(target_id, 0) + 1
@@ -652,15 +696,24 @@ def get_uptime_timeline(target_id: int, days: int = UPTIME_TIMELINE_DAYS) -> lis
     )
 
     with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        maintenance_start = target.maintenance_start if target else None
+        maintenance_end = target.maintenance_end if target else None
         checks = (
             db.query(Check.checked_at, Check.status_code)
-            .filter(Check.target_id == target_id, Check.checked_at >= window_start_utc)
+            .filter(
+                Check.target_id == target_id,
+                Check.checked_at >= window_start_utc,
+                Check.network_issue.is_(False),
+            )
             .order_by(Check.checked_at)
             .all()
         )
 
     buckets: dict = {}
     for checked_at, status_code in checks:
+        if _within_maintenance_window(checked_at, maintenance_start, maintenance_end):
+            continue
         day = to_local(checked_at).date()
         buckets.setdefault(day, []).append(status_code is not None)
 
@@ -682,9 +735,12 @@ def get_downtime_incidents(
 ) -> list[dict]:
     since = datetime.utcnow() - timedelta(days=days)
     with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        maintenance_start = target.maintenance_start if target else None
+        maintenance_end = target.maintenance_end if target else None
         checks = (
             db.query(Check.checked_at, Check.status_code)
-            .filter(Check.target_id == target_id, Check.checked_at >= since)
+            .filter(Check.target_id == target_id, Check.checked_at >= since, Check.network_issue.is_(False))
             .order_by(Check.checked_at)
             .all()
         )
@@ -692,6 +748,8 @@ def get_downtime_incidents(
     raw_incidents = []
     incident_start = None
     for checked_at, status_code in checks:
+        if _within_maintenance_window(checked_at, maintenance_start, maintenance_end):
+            continue
         is_down = status_code is None
         if is_down and incident_start is None:
             incident_start = checked_at

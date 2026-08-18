@@ -3,6 +3,8 @@ import re
 
 import httpx
 
+from app.config import settings
+
 SECURITY_HEADERS = [
     "Strict-Transport-Security",
     "Content-Security-Policy",
@@ -43,7 +45,9 @@ def _parse_set_cookie(raw: str) -> dict | None:
 
 async def check_headers(url: str, timeout: float = 10.0) -> dict:
     try:
-        async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=True, headers={"User-Agent": settings.user_agent}
+        ) as client:
             response = await client.get(url)
     except httpx.HTTPError as exc:
         return {"reachable": False, "security_headers": {}, "info_leak": {}, "cookies": [], "error": str(exc)}

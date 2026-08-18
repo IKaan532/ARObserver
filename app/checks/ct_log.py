@@ -1,5 +1,7 @@
 import httpx
 
+from app.config import settings
+
 CRT_SH_URL = "https://crt.sh/"
 
 
@@ -23,7 +25,7 @@ def check_certificate_transparency(hostname: str, known_names: set[str], timeout
             CRT_SH_URL,
             params={"q": hostname, "output": "json"},
             timeout=timeout,
-            headers={"User-Agent": "ARObserver-CT-Check/1.0"},
+            headers={"User-Agent": settings.user_agent},
         )
         response.raise_for_status()
         entries = response.json()
