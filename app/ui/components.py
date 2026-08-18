@@ -483,6 +483,19 @@ def render_certificate_calendar(entries: list[dict]) -> None:
                 ui.label(f"{entry['expiry_date']} — kalan gün: {entry['days_remaining']}").classes("text-caption ar-mono")
 
 
+def render_domain_expiry_calendar(entries: list[dict]) -> None:
+    if not entries:
+        ui.label("Alan adı kayıt bilgisi bilinen hedef yok.").classes("text-caption text-grey")
+        return
+    with ui.column().classes("w-full gap-1"):
+        for entry in entries:
+            status = cert_days_to_status(entry["days_remaining"])
+            row_classes = f"w-full justify-between items-center ar-row-divider ar-status-stripe ar-status-stripe-{status} q-pl-sm"
+            with ui.row().classes(row_classes):
+                ui.link(entry["name"], f"/targets/{entry['id']}").classes("ar-link-plain")
+                ui.label(f"{entry['expiry_date']} — kalan gün: {entry['days_remaining']}").classes("text-caption ar-mono")
+
+
 def render_response_time_percentiles(stats: dict) -> None:
     if not stats["sample_size"]:
         render_empty_state("Yanıt süresi verisi yok.")

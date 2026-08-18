@@ -12,6 +12,7 @@ from app.alerting.rules import cleanup_legacy_cert_expiry_alerts, evaluate_rules
 from app.checks.content import check_content, compare_fingerprint
 from app.checks.ct_log import check_certificate_transparency
 from app.checks.dns import check_dns, check_dns_hygiene
+from app.checks.domain_expiry import check_domain_expiry
 from app.checks.headers import check_headers
 from app.checks.reachability import check_reachability
 from app.checks.redirect import check_https_redirect
@@ -195,6 +196,34 @@ async def run_target_check(target_id: int) -> None:
 
     if settings.ct_log_check_enabled:
         await _maybe_check_certificate_transparency(target_id, url, tls)
+
+    await _maybe_check_domain_expiry(target_id, url)
+
+
+async def _maybe_check_domain_expiry(target_id: int, url: str) -> None:
+    now = datetime.utcnow()
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is None:
+            return
+        if target.domain_expiry_checked_at is not None and now - target.domain_expiry_checked_at < timedelta(
+            hours=24
+        ):
+            return
+
+    hostname = urlparse(url).hostname
+    if not hostname:
+        return
+
+    result = await check_domain_expiry(hostname)
+
+    with SessionLocal() as db:
+        target = db.get(Target, target_id)
+        if target is not None:
+            target.domain_expiry_checked_at = datetime.utcnow()
+            if result["expiry_date"] is not None:
+                target.domain_expiry_date = result["expiry_date"]
+            db.commit()
 
 
 async def _maybe_check_certificate_transparency(target_id: int, url: str, tls: dict) -> None:

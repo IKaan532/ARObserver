@@ -25,6 +25,8 @@ class Target(Base):
     ct_log_checked_at: Mapped[Optional[datetime]] = mapped_column(default=None)
     maintenance_start: Mapped[Optional[datetime]] = mapped_column(default=None)
     maintenance_end: Mapped[Optional[datetime]] = mapped_column(default=None)
+    domain_expiry_date: Mapped[Optional[datetime]] = mapped_column(default=None)
+    domain_expiry_checked_at: Mapped[Optional[datetime]] = mapped_column(default=None)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
 

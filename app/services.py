@@ -512,6 +512,22 @@ def get_certificate_calendar() -> list[dict]:
     return entries
 
 
+def get_domain_expiry_calendar() -> list[dict]:
+    with SessionLocal() as db:
+        targets = db.query(Target).filter(Target.domain_expiry_date.is_not(None)).order_by(Target.name).all()
+        entries = [
+            {
+                "id": target.id,
+                "name": target.name,
+                "days_remaining": (target.domain_expiry_date - datetime.utcnow()).days,
+                "expiry_date": local_dt(target.domain_expiry_date, "%d.%m.%Y"),
+            }
+            for target in targets
+        ]
+    entries.sort(key=lambda entry: entry["days_remaining"])
+    return entries
+
+
 def _percentile(sorted_values: list[float], pct: float) -> float:
     if len(sorted_values) == 1:
         return round(sorted_values[0], 1)

@@ -92,6 +92,36 @@ def _check_cert_expiry(db: Session, target: Target, latest_check: Check) -> list
     return [alert]
 
 
+DOMAIN_EXPIRY_ALERT_TYPE = "domain_expiry"
+
+
+def _check_domain_expiry(db: Session, target: Target) -> list[Alert]:
+    if target.domain_expiry_date is None:
+        _resolve_alert(db, target.id, DOMAIN_EXPIRY_ALERT_TYPE)
+        return []
+
+    days_remaining = (target.domain_expiry_date - datetime.utcnow()).days
+    sorted_thresholds = sorted(settings.cert_expiry_warn_days_list)
+    breached = [t for t in sorted_thresholds if days_remaining <= t]
+
+    if not breached:
+        _resolve_alert(db, target.id, DOMAIN_EXPIRY_ALERT_TYPE)
+        return []
+
+    threshold = min(breached)
+    level = _cert_expiry_level(threshold, sorted_thresholds)
+    message = f"[{level}] Alan adı kaydının bitişine {days_remaining} gün kaldı (eşik: {threshold} gün)"
+
+    existing = _open_alert_query(db, target.id, DOMAIN_EXPIRY_ALERT_TYPE).first()
+    if existing is not None:
+        existing.message = message
+        return []
+
+    alert = Alert(target_id=target.id, alert_type=DOMAIN_EXPIRY_ALERT_TYPE, message=message)
+    db.add(alert)
+    return [alert]
+
+
 def cleanup_legacy_cert_expiry_alerts(db: Session) -> None:
     legacy_alerts = (
         db.query(Alert)
@@ -200,6 +230,7 @@ def evaluate_rules(db: Session, target: Target, latest_check: Check) -> list[Ale
     new_alerts = []
     new_alerts += _check_unreachable(db, target, latest_check)
     new_alerts += _check_cert_expiry(db, target, latest_check)
+    new_alerts += _check_domain_expiry(db, target)
     new_alerts += _check_score_drop(db, target, previous_check, latest_check)
     new_alerts += _check_missing_headers(db, target, previous_check, latest_check)
     new_alerts += _check_keyword_missing(db, target, latest_check)

@@ -26,6 +26,7 @@ from app.ui.components import (
     render_content_section,
     render_ct_log_result,
     render_deep_check_result,
+    render_domain_expiry_calendar,
     render_downtime_incidents,
     grade_to_status,
     render_empty_state,
@@ -222,6 +223,12 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                         render_certificate_calendar(services.get_certificate_calendar())
 
                     render_certificate_calendar_section()
+                with render_panel("Alan Adı Takvimi"):
+                    @ui.refreshable
+                    def render_domain_expiry_calendar_section() -> None:
+                        render_domain_expiry_calendar(services.get_domain_expiry_calendar())
+
+                    render_domain_expiry_calendar_section()
                 with ui.element("div").classes("md:col-span-2"):
                     with render_panel("Skor Isı Haritası (30 gün)"):
                         @ui.refreshable
@@ -235,6 +242,7 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
             render_rankings_section.refresh()
             render_header_matrix_section.refresh()
             render_certificate_calendar_section.refresh()
+            render_domain_expiry_calendar_section.refresh()
             render_score_heatmap_section.refresh()
             genel_bakis_update_label.set_text(format_last_update())
 
