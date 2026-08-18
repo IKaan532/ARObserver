@@ -268,7 +268,11 @@ def render_page_shell(on_logout: Callable[[], None], back_link: tuple[str, str] 
                 if back_link:
                     href, label = back_link
                     ui.button(label, icon="arrow_back", on_click=lambda: ui.navigate.to(href)).props("flat dense")
-            ui.button("Çıkış", icon="logout", on_click=on_logout).props("flat")
+            with ui.row().classes("items-center gap-2"):
+                ui.button(
+                    "Durum Sayfası", icon="public", on_click=lambda: ui.navigate.to("/durum", new_tab=True)
+                ).props("flat")
+                ui.button("Çıkış", icon="logout", on_click=on_logout).props("flat")
         yield
 
 
@@ -494,6 +498,44 @@ def render_domain_expiry_calendar(entries: list[dict]) -> None:
             with ui.row().classes(row_classes):
                 ui.link(entry["name"], f"/targets/{entry['id']}").classes("ar-link-plain")
                 ui.label(f"{entry['expiry_date']} — kalan gün: {entry['days_remaining']}").classes("text-caption ar-mono")
+
+
+def render_public_status_banner(entries: list[dict]) -> None:
+    known = [entry for entry in entries if entry["up"] is not None]
+    down = [entry for entry in known if not entry["up"]]
+    if not known:
+        status, text = "neutral", "Durum bilgisi henüz yok"
+    elif down:
+        status, text = "bad", f"{len(down)} hizmette kesinti var"
+    else:
+        status, text = "good", "Tüm hizmetler çalışıyor"
+    color = COLOR_TOKENS[status]
+    with ui.row().classes("w-full items-center gap-3 q-pa-md rounded").style(
+        f"background-color: {color}1a; border: 1px solid {color}"
+    ):
+        ui.icon(STATUS_ICONS.get(status, STATUS_ICONS["neutral"])).style(f"color: {color}; font-size: 2rem")
+        ui.label(text).style(f"color: {color}").classes("text-h6")
+
+
+def render_public_status_list(entries: list[dict]) -> None:
+    if not entries:
+        render_empty_state("Şu an görüntülenecek hizmet yok.")
+        return
+    with ui.column().classes("w-full gap-2"):
+        for entry in entries:
+            status = "neutral" if entry["up"] is None else ("good" if entry["up"] else "bad")
+            label = "Bilinmiyor" if entry["up"] is None else ("Çalışıyor" if entry["up"] else "Kesinti")
+            with render_panel(entry["name"], status=status):
+                render_status_chip(status, label)
+                with ui.row().classes("gap-0.5 items-end q-mt-xs"):
+                    for hour_up in entry["hours"]:
+                        hour_status = "neutral" if hour_up is None else ("good" if hour_up else "bad")
+                        ui.element("div").classes("w-2 h-6 rounded").style(
+                            f"background-color: {COLOR_TOKENS[hour_status]}"
+                        )
+                ui.label(f"Son {len(entry['hours'])} saat").classes("text-caption").style(
+                    f"color: {COLOR_TOKENS['text_muted']}"
+                )
 
 
 def render_response_time_percentiles(stats: dict) -> None:

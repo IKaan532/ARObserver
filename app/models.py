@@ -27,6 +27,7 @@ class Target(Base):
     maintenance_end: Mapped[Optional[datetime]] = mapped_column(default=None)
     domain_expiry_date: Mapped[Optional[datetime]] = mapped_column(default=None)
     domain_expiry_checked_at: Mapped[Optional[datetime]] = mapped_column(default=None)
+    public_status_visible: Mapped[bool] = mapped_column(default=False)
     created_at: Mapped[datetime] = mapped_column(default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(default=datetime.utcnow, onupdate=datetime.utcnow)
 

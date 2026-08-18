@@ -15,6 +15,7 @@ from app.auth import (
 from app.config import settings
 from app.scheduler import trigger_manual_check
 from app.ui.components import (
+    COLOR_TOKENS,
     TOKEN_CSS,
     build_line_chart,
     build_stacked_bar_chart,
@@ -36,6 +37,8 @@ from app.ui.components import (
     render_overview_summary,
     render_page_shell,
     render_panel,
+    render_public_status_banner,
+    render_public_status_list,
     render_rankings,
     render_response_time_percentiles,
     render_score_breakdown,
@@ -108,6 +111,21 @@ def login_page() -> None:
             "keydown.enter", try_login
         )
         ui.button("Giriş", on_click=try_login).classes("w-full")
+
+
+@ui.page("/durum")
+def public_status_page() -> None:
+    ui.page_title("Durum — ARObserver")
+    entries = services.get_public_status()
+
+    with ui.column().classes("w-full max-w-2xl mx-auto gap-4 q-pa-md"):
+        ui.link("ARObserver", "/").classes("text-caption ar-link-plain")
+        ui.label("Hizmet Durumu").classes("text-h5")
+        render_public_status_banner(entries)
+        render_public_status_list(entries)
+        ui.label(f"Son güncelleme: {datetime.now().strftime('%H:%M:%S')} — güncel duruma bakmak için sayfayı yenileyin.").classes(
+            "text-caption"
+        ).style(f"color: {COLOR_TOKENS['text_muted']}")
 
 
 VALID_TABS = ("hedefler", "genel-bakis", "olaylar")
@@ -300,6 +318,10 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                     precision=0,
                 ).classes("w-full")
                 active_switch = ui.switch("Aktif", value=target["active"] if is_edit else True)
+                public_status_switch = ui.switch(
+                    "Herkese Açık Durum Sayfasında Göster (/durum)",
+                    value=target["public_status_visible"] if is_edit else False,
+                )
 
                 with ui.row().classes("w-full gap-2"):
                     maintenance_start_input = ui.input(label="Bakım Penceresi Başlangıcı (isteğe bağlı)").props(
@@ -341,6 +363,7 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                                 int(status_input.value),
                                 maintenance_start,
                                 maintenance_end,
+                                public_status_switch.value,
                             )
                         else:
                             new_id = services.create_target(
@@ -352,6 +375,7 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                                 int(status_input.value),
                                 maintenance_start,
                                 maintenance_end,
+                                public_status_switch.value,
                             )
                             ui.notify(f"Hedef eklendi, ilk kontrol tetiklendi (id {new_id}).", type="positive")
                     except ValueError as exc:
