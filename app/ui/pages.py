@@ -405,25 +405,28 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
                                     render_ct_log_result(detail["ct_log_result"], detail["ct_log_checked_at"])
 
                         with ui.tab_panel("derin-kontrol"):
+                            derin_kontrol_container = ui.column().classes("w-full gap-2")
+
                             async def build_deep_check_panel() -> None:
                                 deep_available, deep_unavailable_reason = await services.check_deep_check_service_available()
                                 deep_running_initial = services.is_deep_check_running(target_id)
-                                with render_panel("Derin Kontrol"):
-                                    with ui.row().classes("items-center gap-2"):
-                                        deep_check_button = ui.button("Derin Kontrol")
-                                        deep_spinner = ui.spinner(size="1.5em")
-                                        deep_spinner.set_visibility(deep_running_initial)
-                                    deep_check_button.set_enabled(deep_available and not deep_running_initial)
-                                    if not deep_available:
-                                        ui.label(
-                                            deep_unavailable_reason or "Derin kontrol servisi şu anda erişilemiyor."
-                                        ).classes("text-caption text-orange")
+                                with derin_kontrol_container:
+                                    with render_panel("Derin Kontrol"):
+                                        with ui.row().classes("items-center gap-2"):
+                                            deep_check_button = ui.button("Derin Kontrol")
+                                            deep_spinner = ui.spinner(size="1.5em")
+                                            deep_spinner.set_visibility(deep_running_initial)
+                                        deep_check_button.set_enabled(deep_available and not deep_running_initial)
+                                        if not deep_available:
+                                            ui.label(
+                                                deep_unavailable_reason or "Derin kontrol servisi şu anda erişilemiyor."
+                                            ).classes("text-caption text-orange")
 
-                                    @ui.refreshable
-                                    def render_inline_deep_check() -> None:
-                                        render_deep_check_result(services.get_deep_check_result(target_id))
+                                        @ui.refreshable
+                                        def render_inline_deep_check() -> None:
+                                            render_deep_check_result(services.get_deep_check_result(target_id))
 
-                                    render_inline_deep_check()
+                                        render_inline_deep_check()
 
                                     deep_was_running = {"value": deep_running_initial}
 
