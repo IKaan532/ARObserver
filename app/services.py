@@ -55,25 +55,19 @@ HEARTBEAT_LIMIT = 20
 
 
 def get_target_heartbeats(limit: int = HEARTBEAT_LIMIT) -> dict[int, list[bool | None]]:
-    with SessionLocal() as db:
-        row_number = func.row_number().over(
-            partition_by=Check.target_id, order_by=desc(Check.checked_at)
-        ).label("rn")
-        base = select(Check.id, Check.target_id, Check.checked_at, Check.status_code, row_number).where(
-            Check.network_issue.is_(False)
-        )
-        ranked = base.subquery()
-        rows = (
-            db.query(ranked.c.target_id, ranked.c.checked_at, ranked.c.status_code)
-            .filter(ranked.c.rn <= limit)
-            .order_by(ranked.c.target_id, desc(ranked.c.checked_at))
-            .all()
-        )
-
     heartbeats: dict[int, list[bool | None]] = {}
-    for target_id, _checked_at, status_code in rows:
-        heartbeats.setdefault(target_id, []).append(status_code is not None)
-    return {target_id: list(reversed(values)) for target_id, values in heartbeats.items()}
+    with SessionLocal() as db:
+        target_ids = [target_id for (target_id,) in db.query(Target.id).all()]
+        for target_id in target_ids:
+            rows = (
+                db.query(Check.status_code)
+                .filter(Check.target_id == target_id, Check.network_issue.is_(False))
+                .order_by(desc(Check.checked_at))
+                .limit(limit)
+                .all()
+            )
+            heartbeats[target_id] = [status_code is not None for (status_code,) in reversed(rows)]
+    return heartbeats
 
 
 def list_groups() -> list[str]:

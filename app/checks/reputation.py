@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 import dns.resolver
@@ -97,7 +98,7 @@ async def check_safe_browsing(url: str, timeout: float = 10.0) -> bool | None:
 
 
 async def check_reputation(ip: str | None, url: str) -> dict:
-    dnsbl_flagged = check_dnsbl(ip) if ip else None
+    dnsbl_flagged = await asyncio.to_thread(check_dnsbl, ip) if ip else None
     safe_browsing_flagged = await check_safe_browsing(url)
     return {
         "dnsbl_flagged": dnsbl_flagged,
