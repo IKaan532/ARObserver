@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import case, desc, func, select
 
 from app.checks import deep_check
 from app.checks.headers import SECURITY_HEADERS
@@ -634,17 +634,24 @@ def get_uptime_stats(target_id: int) -> dict:
         stats = {}
         for label, days in (("uptime_7d", 7), ("uptime_30d", 30)):
             since = now - timedelta(days=days)
-            rows = (
-                db.query(Check.checked_at, Check.status_code)
-                .filter(Check.target_id == target_id, Check.checked_at >= since, Check.network_issue.is_(False))
-                .all()
-            )
-            rows = [row for row in rows if not _within_maintenance_window(row[0], maintenance_start, maintenance_end)]
-            if not rows:
+            base_filter = [
+                Check.target_id == target_id,
+                Check.checked_at >= since,
+                Check.network_issue.is_(False),
+            ]
+            if maintenance_start is not None and maintenance_end is not None:
+                base_filter.append(
+                    ~((Check.checked_at >= maintenance_start) & (Check.checked_at <= maintenance_end))
+                )
+
+            total, up = db.query(
+                func.count(Check.id),
+                func.sum(case((Check.status_code.isnot(None), 1), else_=0)),
+            ).filter(*base_filter).one()
+            if not total:
                 stats[label] = None
                 continue
-            up = sum(1 for (_checked_at, status_code) in rows if status_code is not None)
-            stats[label] = round(100 * up / len(rows), 1)
+            stats[label] = round(100 * (up or 0) / total, 1)
         return stats
 
 
