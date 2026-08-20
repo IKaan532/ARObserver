@@ -17,6 +17,9 @@ from app.scheduler import trigger_manual_check
 from app.ui.components import (
     COLOR_TOKENS,
     TOKEN_CSS,
+    UPTIME_GAUGE_MAX,
+    UPTIME_GAUGE_MIN,
+    UPTIME_GAUGE_STOPS,
     build_line_chart,
     build_stacked_bar_chart,
     format_last_update,
@@ -32,23 +35,25 @@ from app.ui.components import (
     grade_to_status,
     render_empty_state,
     render_event_feed,
+    render_fleet_status,
+    render_gauge,
     render_grade_distribution,
     render_header_matrix,
     render_overview_summary,
     render_page_shell,
     render_panel,
-    render_public_status_banner,
-    render_public_status_list,
     render_rankings,
     render_reputation_result,
     render_response_time_percentiles,
     render_score_breakdown,
     render_score_heatmap,
+    render_sidebar_target_row,
+    render_status_chip,
     render_status_table,
-    render_target_card,
     render_tls_status,
     render_uptime_summary,
     render_uptime_timeline,
+    uptime_pct_to_status,
     flash_last_point,
     shift_time_axis,
     update_line_chart,
@@ -114,36 +119,16 @@ def login_page() -> None:
         ui.button("Giriş", on_click=try_login).classes("w-full")
 
 
-@ui.page("/durum")
-def public_status_page() -> None:
-    ui.page_title("Durum — ARObserver")
-    entries = services.get_public_status()
-
-    with ui.column().classes("w-full max-w-2xl mx-auto gap-4 q-pa-md"):
-        ui.link("ARObserver", "/").classes("text-caption ar-link-plain")
-        ui.label("Hizmet Durumu").classes("text-h5")
-        render_public_status_banner(entries)
-        render_public_status_list(entries)
-        ui.label(f"Son güncelleme: {datetime.now().strftime('%H:%M:%S')} — güncel duruma bakmak için sayfayı yenileyin.").classes(
-            "text-caption"
-        ).style(f"color: {COLOR_TOKENS['text_muted']}")
-
-
-VALID_TABS = ("hedefler", "genel-bakis", "olaylar")
-
-
 @ui.page("/")
-def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str = "") -> None:
+def index_page(grade: str = "", group: str = "", q: str = "") -> None:
     ui.page_title("ARObserver — Hedefler")
-
-    initial_tab = tab if tab in VALID_TABS else "hedefler"
 
     state = {
         "grades": [value for value in grade.split(",") if value],
         "groups": [value for value in group.split(",") if value],
         "query": q,
     }
-    current_tab = {"value": initial_tab}
+    selected_target_id: dict[str, int | None] = {"value": None}
 
     def matches(card: dict) -> bool:
         if state["grades"] and card["letter_grade"] not in state["grades"]:
@@ -157,7 +142,7 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
         return True
 
     def sync_url() -> None:
-        params = {"tab": current_tab["value"]}
+        params = {}
         if state["grades"]:
             params["grade"] = ",".join(state["grades"])
         if state["groups"]:
@@ -169,34 +154,25 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
         ui.run_javascript(f"history.replaceState(null, '', {json.dumps(new_url)})")
 
     with render_page_shell(on_logout=_do_logout):
-        @ui.refreshable
-        def render_overview() -> None:
-            render_overview_summary(services.get_overview_summary())
+        pass
 
-        render_overview()
+    right_pane_timer: dict[str, ui.timer | None] = {"value": None}
+    deep_check_timer_ref: dict[str, ui.timer | None] = {"value": None}
+    sidebar_refs = {"refresh": None}
 
-        with ui.tabs().classes("w-full") as tabs:
-            with ui.tab("hedefler", label="Hedefler"):
-                alert_badge = ui.badge("0", color="negative").props("floating")
-                alert_badge.set_visibility(False)
-            ui.tab("genel-bakis", label="Genel Bakış")
-            ui.tab("olaylar", label="Olay Akışı")
+    with ui.row().classes("w-full items-start gap-4 flex-col md:flex-row"):
+        sidebar_column = ui.column().classes("w-full md:w-72 shrink-0 gap-2")
+        right_pane = ui.column().classes("flex-1 gap-4 min-w-0")
 
-    with ui.tab_panels(tabs, value=initial_tab).classes("w-full"):
-        with ui.tab_panel("hedefler"):
-            hedefler_container = ui.column().classes("w-full gap-2")
-        with ui.tab_panel("genel-bakis"):
-            genel_bakis_container = ui.column().classes("w-full gap-2")
-        with ui.tab_panel("olaylar"):
-            olaylar_container = ui.column().classes("w-full gap-2")
+    def build_panel_view() -> None:
+        with right_pane:
+            panel_update_label = ui.label("").classes("text-caption text-grey")
 
-    containers = {"hedefler": hedefler_container, "genel-bakis": genel_bakis_container, "olaylar": olaylar_container}
-    built = {"hedefler": False, "genel-bakis": False, "olaylar": False}
-    timers: dict[str, ui.timer] = {}
+            @ui.refreshable
+            def render_overview() -> None:
+                render_overview_summary(services.get_overview_summary())
 
-    def build_genel_bakis() -> None:
-        with containers["genel-bakis"]:
-            genel_bakis_update_label = ui.label("").classes("text-caption text-grey")
+            render_overview()
 
             async def handle_download_report() -> None:
                 pdf_button.set_enabled(False)
@@ -248,6 +224,12 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                         render_domain_expiry_calendar(services.get_domain_expiry_calendar())
 
                     render_domain_expiry_calendar_section()
+                with render_panel("Durum"):
+                    @ui.refreshable
+                    def render_fleet_status_section() -> None:
+                        render_fleet_status(services.get_fleet_status())
+
+                    render_fleet_status_section()
                 with ui.element("div").classes("md:col-span-2"):
                     with render_panel("Skor Isı Haritası (30 gün)"):
                         @ui.refreshable
@@ -256,36 +238,261 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
 
                         render_score_heatmap_section()
 
-        def genel_bakis_tick() -> None:
-            render_distribution.refresh()
-            render_rankings_section.refresh()
-            render_header_matrix_section.refresh()
-            render_certificate_calendar_section.refresh()
-            render_domain_expiry_calendar_section.refresh()
-            render_score_heatmap_section.refresh()
-            genel_bakis_update_label.set_text(format_last_update())
-
-        timers["genel-bakis"] = ui.timer(POLL_INTERVAL_SECONDS, genel_bakis_tick)
-
-    def build_olaylar() -> None:
-        with containers["olaylar"]:
-            olaylar_update_label = ui.label("").classes("text-caption text-grey")
-
             @ui.refreshable
             def render_event_feed_section() -> None:
                 render_event_feed(services.get_event_feed())
 
             with render_panel("Olay Akışı"):
-                with ui.scroll_area().classes("w-full h-[70vh]"):
+                with ui.scroll_area().classes("w-full h-96"):
                     render_event_feed_section()
 
-        def olaylar_tick() -> None:
-            render_event_feed_section.refresh()
-            olaylar_update_label.set_text(format_last_update())
+            def panel_tick() -> None:
+                render_overview.refresh()
+                render_distribution.refresh()
+                render_rankings_section.refresh()
+                render_header_matrix_section.refresh()
+                render_certificate_calendar_section.refresh()
+                render_domain_expiry_calendar_section.refresh()
+                render_fleet_status_section.refresh()
+                render_score_heatmap_section.refresh()
+                render_event_feed_section.refresh()
+                panel_update_label.set_text(format_last_update())
 
-        timers["olaylar"] = ui.timer(POLL_INTERVAL_SECONDS, olaylar_tick)
+            right_pane_timer["value"] = ui.timer(POLL_INTERVAL_SECONDS, panel_tick)
 
-    def build_hedefler() -> None:
+    def build_quick_view(target_id: int) -> None:
+        with right_pane:
+            ui.button("Panel'e Dön", icon="arrow_back", on_click=show_panel).props("flat dense")
+            quick_view_update_label = ui.label("").classes("text-caption text-grey")
+
+            @ui.refreshable
+            def render_quick_view() -> None:
+                detail = services.get_target_detail(target_id)
+                if detail is None:
+                    render_empty_state("Hedef bulunamadı.")
+                    return
+                last_check = detail["last_check"]
+
+                ui.label(detail["name"]).classes("text-h5")
+                ui.label(detail["url"]).classes("text-caption").style(f"color: {COLOR_TOKENS['text_muted']}")
+
+                if last_check is None:
+                    render_empty_state("Henüz kontrol verisi yok.")
+                else:
+                    if last_check["network_issue"]:
+                        status_text, status = "Ağ sorunu (test edilemedi)", "neutral"
+                    elif last_check["status_code"]:
+                        status_text, status = f"HTTP {last_check['status_code']}", "good"
+                    else:
+                        status_text, status = "Erişilemiyor", "bad"
+                    render_status_chip(status, status_text)
+
+                uptime_stats = services.get_uptime_stats(target_id)
+                cert_days = (last_check["tls_result"] or {}).get("days_remaining") if last_check else None
+                response_ms = last_check["response_time_ms"] if last_check else None
+
+                with ui.row().classes("items-end gap-6 q-mt-sm"):
+                    with ui.column().classes("items-start gap-0"):
+                        ui.label("Yanıt Süresi").style(
+                            f"font-size: 0.7rem; color: {COLOR_TOKENS['text_muted']}; text-transform: uppercase; "
+                            "letter-spacing: 0.04em"
+                        )
+                        ui.label(f"{response_ms} ms" if response_ms is not None else "-").classes("ar-mono").style(
+                            f"font-size: 1.5rem; font-weight: 600; color: {COLOR_TOKENS['text_primary']}"
+                        )
+                    for label, key in (("Uptime 7g", "uptime_7d"), ("Uptime 30g", "uptime_30d")):
+                        pct = uptime_stats.get(key)
+                        render_gauge(
+                            value=pct,
+                            min_value=UPTIME_GAUGE_MIN,
+                            max_value=UPTIME_GAUGE_MAX,
+                            color_stops=UPTIME_GAUGE_STOPS,
+                            status=uptime_pct_to_status(pct),
+                            center_text=f"{pct}%" if pct is not None else "-",
+                            center_subtext=label,
+                            height="110px",
+                        )
+                    with ui.column().classes("items-start gap-0"):
+                        ui.label("Sertifika (kalan gün)").style(
+                            f"font-size: 0.7rem; color: {COLOR_TOKENS['text_muted']}; text-transform: uppercase; "
+                            "letter-spacing: 0.04em"
+                        )
+                        ui.label(str(cert_days) if cert_days is not None else "-").classes("ar-mono").style(
+                            f"font-size: 1.5rem; font-weight: 600; color: {COLOR_TOKENS['text_primary']}"
+                        )
+
+                with render_panel("Yanıt Süresi"):
+                    points = services.get_chart_points(target_id)
+                    if points:
+                        build_line_chart(points, "response_time_ms", services.CHART_WINDOW_MINUTES)
+                    else:
+                        render_empty_state("Henüz grafik verisi yok.")
+
+            render_quick_view()
+
+            def quick_view_tick() -> None:
+                render_quick_view.refresh()
+                quick_view_update_label.set_text(format_last_update())
+
+            right_pane_timer["value"] = ui.timer(POLL_INTERVAL_SECONDS, quick_view_tick)
+
+            detail_expansion = ui.expansion("Tüm Detaylar", icon="expand_more").classes("w-full ar-panel")
+            detail_built = {"value": False}
+
+            def build_detail_expansion() -> None:
+                detail = services.get_target_detail(target_id)
+                last_check = detail["last_check"] if detail else None
+                last_check_status = grade_to_status(last_check["letter_grade"]) if last_check else None
+
+                with detail_expansion:
+                    with ui.tabs().classes("w-full") as inline_tabs:
+                        ui.tab("kontrol-durumu", label="Kontrol Durumu")
+                        ui.tab("sertifika", label="Sertifika")
+                        ui.tab("derin-kontrol", label="Derin Kontrol")
+                        ui.tab("gecmis", label="Geçmiş")
+
+                    with ui.tab_panels(inline_tabs, value="kontrol-durumu").classes("w-full"):
+                        with ui.tab_panel("kontrol-durumu"):
+                            with render_panel("Son Kontrol Durumu", status=last_check_status):
+                                render_status_table(last_check)
+
+                            with render_panel("Skor Kırılımı", status=last_check_status):
+                                check_history = services.get_check_history(target_id)
+                                default_check_id = last_check["id"] if last_check else None
+
+                                if check_history:
+                                    check_selector = ui.select(
+                                        {entry["id"]: entry["label"] for entry in check_history},
+                                        value=default_check_id,
+                                        label="Kontrol Seç",
+                                    ).classes("min-w-[280px]")
+
+                                @ui.refreshable
+                                def render_inline_breakdown() -> None:
+                                    selected_id = check_selector.value if check_history else default_check_id
+                                    selected_check = services.get_check_by_id(selected_id) if selected_id else None
+                                    previous_check = (
+                                        services.get_previous_check(target_id, selected_id) if selected_id else None
+                                    )
+                                    render_score_breakdown(selected_check, previous_check)
+
+                                render_inline_breakdown()
+                                if check_history:
+                                    check_selector.on_value_change(lambda e: render_inline_breakdown.refresh())
+
+                            def handle_reset_baseline() -> None:
+                                services.reset_baseline(target_id)
+                                trigger_manual_check(target_id)
+                                ui.notify("Temel çizgi sıfırlandı, yeni kontrol tetiklendi.", type="info")
+
+                            with render_panel("İçerik Bütünlüğü"):
+                                render_content_section(
+                                    last_check["content_result"] if last_check else None, handle_reset_baseline
+                                )
+
+                            with render_panel("İtibar Kontrolü"):
+                                render_reputation_result(detail["reputation_result"], detail["reputation_checked_at"])
+
+                        with ui.tab_panel("sertifika"):
+                            with render_panel("TLS", status=last_check_status):
+                                render_tls_status(last_check)
+
+                            with render_panel("Sertifika Zinciri"):
+                                render_certificate_chain(((last_check or {}).get("tls_result") or {}).get("chain") or [])
+
+                            if settings.ct_log_check_enabled:
+                                with render_panel("Certificate Transparency (deneysel)"):
+                                    render_ct_log_result(detail["ct_log_result"], detail["ct_log_checked_at"])
+
+                        with ui.tab_panel("derin-kontrol"):
+                            async def build_deep_check_panel() -> None:
+                                deep_available, deep_unavailable_reason = await services.check_deep_check_service_available()
+                                deep_running_initial = services.is_deep_check_running(target_id)
+                                with render_panel("Derin Kontrol"):
+                                    with ui.row().classes("items-center gap-2"):
+                                        deep_check_button = ui.button("Derin Kontrol")
+                                        deep_spinner = ui.spinner(size="1.5em")
+                                        deep_spinner.set_visibility(deep_running_initial)
+                                    deep_check_button.set_enabled(deep_available and not deep_running_initial)
+                                    if not deep_available:
+                                        ui.label(
+                                            deep_unavailable_reason or "Derin kontrol servisi şu anda erişilemiyor."
+                                        ).classes("text-caption text-orange")
+
+                                    @ui.refreshable
+                                    def render_inline_deep_check() -> None:
+                                        render_deep_check_result(services.get_deep_check_result(target_id))
+
+                                    render_inline_deep_check()
+
+                                    deep_was_running = {"value": deep_running_initial}
+
+                                    def handle_deep_check() -> None:
+                                        result = services.trigger_deep_check(target_id)
+                                        if result == "running":
+                                            ui.notify("Derin kontrol zaten çalışıyor.", type="info")
+                                            return
+                                        deep_was_running["value"] = True
+                                        deep_check_button.set_enabled(False)
+                                        deep_spinner.set_visibility(True)
+                                        ui.notify("Derin kontrol başlatıldı, 10-30 sn sürebilir.", type="info")
+
+                                    deep_check_button.on_click(handle_deep_check)
+
+                                    def deep_check_tick() -> None:
+                                        running = services.is_deep_check_running(target_id)
+                                        if running:
+                                            deep_was_running["value"] = True
+                                            return
+                                        if deep_was_running["value"]:
+                                            deep_was_running["value"] = False
+                                            deep_spinner.set_visibility(False)
+                                            deep_check_button.set_enabled(deep_available)
+                                            render_inline_deep_check.refresh()
+                                            ui.notify("Derin kontrol tamamlandı.", type="positive")
+
+                                    deep_check_timer_ref["value"] = ui.timer(2.0, deep_check_tick)
+
+                            asyncio.ensure_future(build_deep_check_panel())
+
+                        with ui.tab_panel("gecmis"):
+                            with render_panel("Kesinti Geçmişi"):
+                                render_downtime_incidents(services.get_downtime_incidents(target_id))
+
+            def on_detail_expansion_toggle(e) -> None:
+                if e.value and not detail_built["value"]:
+                    detail_built["value"] = True
+                    build_detail_expansion()
+
+            detail_expansion.on_value_change(on_detail_expansion_toggle)
+
+    def show_panel() -> None:
+        if right_pane_timer["value"] is not None:
+            right_pane_timer["value"].deactivate()
+            right_pane_timer["value"] = None
+        if deep_check_timer_ref["value"] is not None:
+            deep_check_timer_ref["value"].deactivate()
+            deep_check_timer_ref["value"] = None
+        selected_target_id["value"] = None
+        right_pane.clear()
+        build_panel_view()
+        if sidebar_refs["refresh"] is not None:
+            sidebar_refs["refresh"]()
+
+    def show_quick_view(target_id: int) -> None:
+        if right_pane_timer["value"] is not None:
+            right_pane_timer["value"].deactivate()
+            right_pane_timer["value"] = None
+        if deep_check_timer_ref["value"] is not None:
+            deep_check_timer_ref["value"].deactivate()
+            deep_check_timer_ref["value"] = None
+        selected_target_id["value"] = target_id
+        right_pane.clear()
+        build_quick_view(target_id)
+        if sidebar_refs["refresh"] is not None:
+            sidebar_refs["refresh"]()
+
+    def build_sidebar() -> None:
         def open_target_dialog(target: dict | None) -> None:
             is_edit = target is not None
 
@@ -319,10 +526,6 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                     precision=0,
                 ).classes("w-full")
                 active_switch = ui.switch("Aktif", value=target["active"] if is_edit else True)
-                public_status_switch = ui.switch(
-                    "Herkese Açık Durum Sayfasında Göster (/durum)",
-                    value=target["public_status_visible"] if is_edit else False,
-                )
 
                 with ui.row().classes("w-full gap-2"):
                     maintenance_start_input = ui.input(label="Bakım Penceresi Başlangıcı (isteğe bağlı)").props(
@@ -364,7 +567,6 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                                 int(status_input.value),
                                 maintenance_start,
                                 maintenance_end,
-                                public_status_switch.value,
                             )
                         else:
                             new_id = services.create_target(
@@ -376,14 +578,13 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                                 int(status_input.value),
                                 maintenance_start,
                                 maintenance_end,
-                                public_status_switch.value,
                             )
                             ui.notify(f"Hedef eklendi, ilk kontrol tetiklendi (id {new_id}).", type="positive")
                     except ValueError as exc:
                         ui.notify(str(exc), type="negative")
                         return
                     dialog.close()
-                    render_cards.refresh()
+                    render_sidebar_rows.refresh()
                     if is_edit:
                         ui.notify("Kaydedildi.", type="positive")
 
@@ -397,7 +598,9 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                                 services.delete_target(target["id"])
                                 confirm.close()
                                 dialog.close()
-                                render_cards.refresh()
+                                render_sidebar_rows.refresh()
+                                if selected_target_id["value"] == target["id"]:
+                                    show_panel()
                                 ui.notify("Hedef silindi.", type="info")
 
                             ui.button("Sil", on_click=do_delete, color="negative")
@@ -430,7 +633,7 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
             state["groups"] = list(group_select.value or [])
             state["query"] = search_input.value or ""
             sync_url()
-            render_cards.refresh()
+            render_sidebar_rows.refresh()
 
         def remove_grade(value: str) -> None:
             grade_select.set_value([v for v in grade_select.value if v != value])
@@ -457,31 +660,32 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
             group_select.set_value(current)
             on_filter_change()
 
-        with containers["hedefler"]:
-            with ui.row().classes("items-center gap-4"):
-                grade_select = ui.select(
-                    GRADE_OPTIONS,
-                    value=state["grades"],
-                    multiple=True,
-                    label="Harf Notu",
-                    on_change=lambda e: on_filter_change(),
-                ).classes("min-w-[140px]")
-                group_select = ui.select(
-                    services.list_groups(),
-                    value=state["groups"],
-                    multiple=True,
-                    label="Grup",
-                    on_change=lambda e: on_filter_change(),
-                ).classes("min-w-[140px]")
+        with sidebar_column:
+            with ui.column().classes("w-full gap-2"):
+                ui.button("+ Yeni Hedef", on_click=open_create_dialog).classes("w-full")
                 search_input = ui.input(
                     label="Ara (ad/url)", value=state["query"], on_change=lambda e: on_filter_change()
-                )
-                ui.button("+ Yeni Hedef", on_click=open_create_dialog)
+                ).classes("w-full")
+                with ui.row().classes("w-full gap-2"):
+                    grade_select = ui.select(
+                        GRADE_OPTIONS,
+                        value=state["grades"],
+                        multiple=True,
+                        label="Harf Notu",
+                        on_change=lambda e: on_filter_change(),
+                    ).classes("flex-1 min-w-0")
+                    group_select = ui.select(
+                        services.list_groups(),
+                        value=state["groups"],
+                        multiple=True,
+                        label="Grup",
+                        on_change=lambda e: on_filter_change(),
+                    ).classes("flex-1 min-w-0")
 
-            hedefler_update_label = ui.label("").classes("text-caption text-grey")
+            sidebar_update_label = ui.label("").classes("text-caption text-grey")
 
             @ui.refreshable
-            def render_cards() -> None:
+            def render_sidebar_rows() -> None:
                 cards = services.list_target_cards()
                 filtered = [card for card in cards if matches(card)]
 
@@ -495,35 +699,29 @@ def index_page(tab: str = "hedefler", grade: str = "", group: str = "", q: str =
                     ui.label("Eşleşen hedef yok.")
                     return
 
-                with ui.element("div").classes("w-full grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"):
+                heartbeats = services.get_target_heartbeats()
+                with ui.column().classes("w-full gap-1"):
                     for card in filtered:
-                        render_target_card(card, add_group_filter, open_edit_dialog)
+                        render_sidebar_target_row(
+                            card,
+                            heartbeats.get(card["id"], []),
+                            selected_target_id["value"] == card["id"],
+                            show_quick_view,
+                            open_edit_dialog,
+                            add_group_filter,
+                        )
 
-            render_cards()
+            render_sidebar_rows()
+            sidebar_refs["refresh"] = render_sidebar_rows.refresh
 
-        def hedefler_tick() -> None:
-            render_cards.refresh()
-            render_overview.refresh()
-            open_count = services.get_overview_summary()["open_alerts_count"]
-            alert_badge.set_text(str(open_count))
-            alert_badge.set_visibility(open_count > 0)
-            hedefler_update_label.set_text(format_last_update())
+        def sidebar_tick() -> None:
+            render_sidebar_rows.refresh()
+            sidebar_update_label.set_text(format_last_update())
 
-        timers["hedefler"] = ui.timer(POLL_INTERVAL_SECONDS, hedefler_tick)
+        ui.timer(POLL_INTERVAL_SECONDS, sidebar_tick)
 
-    BUILDERS = {"hedefler": build_hedefler, "genel-bakis": build_genel_bakis, "olaylar": build_olaylar}
-
-    def activate_tab(name: str) -> None:
-        current_tab["value"] = name
-        for tab_name, timer in timers.items():
-            timer.active = tab_name == name
-        if not built[name]:
-            built[name] = True
-            BUILDERS[name]()
-        sync_url()
-
-    tabs.on_value_change(lambda e: activate_tab(e.value))
-    activate_tab(initial_tab)
+    build_sidebar()
+    show_panel()
 
 
 DETAIL_TABS = ("genel-bakis", "kontrol-durumu", "sertifika", "derin-kontrol", "gecmis")

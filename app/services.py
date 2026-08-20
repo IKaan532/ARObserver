@@ -51,6 +51,31 @@ def get_latest_checks_by_target(db) -> dict[int, Check]:
     return {check.target_id: check for check in checks}
 
 
+HEARTBEAT_LIMIT = 20
+
+
+def get_target_heartbeats(limit: int = HEARTBEAT_LIMIT) -> dict[int, list[bool | None]]:
+    with SessionLocal() as db:
+        row_number = func.row_number().over(
+            partition_by=Check.target_id, order_by=desc(Check.checked_at)
+        ).label("rn")
+        base = select(Check.id, Check.target_id, Check.checked_at, Check.status_code, row_number).where(
+            Check.network_issue.is_(False)
+        )
+        ranked = base.subquery()
+        rows = (
+            db.query(ranked.c.target_id, ranked.c.checked_at, ranked.c.status_code)
+            .filter(ranked.c.rn <= limit)
+            .order_by(ranked.c.target_id, desc(ranked.c.checked_at))
+            .all()
+        )
+
+    heartbeats: dict[int, list[bool | None]] = {}
+    for target_id, _checked_at, status_code in rows:
+        heartbeats.setdefault(target_id, []).append(status_code is not None)
+    return {target_id: list(reversed(values)) for target_id, values in heartbeats.items()}
+
+
 def list_groups() -> list[str]:
     with SessionLocal() as db:
         tag_lists = db.query(Target.tags).all()
@@ -123,7 +148,6 @@ def get_editable_target(target_id: int) -> dict | None:
             "active": target.active,
             "maintenance_start": target.maintenance_start,
             "maintenance_end": target.maintenance_end,
-            "public_status_visible": target.public_status_visible,
         }
 
 
@@ -150,7 +174,6 @@ def create_target(
     expected_status: int = 200,
     maintenance_start: datetime | None = None,
     maintenance_end: datetime | None = None,
-    public_status_visible: bool = False,
 ) -> int:
     from app.scheduler import schedule_target, trigger_manual_check
 
@@ -166,7 +189,6 @@ def create_target(
             expected_status=expected_status,
             maintenance_start=maintenance_start,
             maintenance_end=maintenance_end,
-            public_status_visible=public_status_visible,
         )
         db.add(target)
         db.commit()
@@ -189,7 +211,6 @@ def update_target(
     expected_status: int = 200,
     maintenance_start: datetime | None = None,
     maintenance_end: datetime | None = None,
-    public_status_visible: bool = False,
 ) -> None:
     from app.scheduler import schedule_target, unschedule_target
 
@@ -209,7 +230,6 @@ def update_target(
         target.active = active
         target.maintenance_start = maintenance_start
         target.maintenance_end = maintenance_end
-        target.public_status_visible = public_status_visible
         db.commit()
 
     if active:
@@ -676,52 +696,19 @@ def get_fleet_uptime_stats() -> dict[int, dict]:
     return stats
 
 
-PUBLIC_STATUS_WINDOW_HOURS = 24
-
-
-def get_public_status() -> list[dict]:
-    now = datetime.utcnow()
-    since = now - timedelta(hours=PUBLIC_STATUS_WINDOW_HOURS)
+def get_fleet_status() -> list[dict]:
     with SessionLocal() as db:
-        targets = (
-            db.query(Target.id, Target.name)
-            .filter(Target.public_status_visible.is_(True))
-            .order_by(Target.name)
-            .all()
-        )
-        target_ids = [target_id for target_id, _name in targets]
-        rows = []
-        if target_ids:
-            rows = (
-                db.query(Check.target_id, Check.checked_at, Check.status_code)
-                .filter(
-                    Check.target_id.in_(target_ids),
-                    Check.checked_at >= since,
-                    Check.network_issue.is_(False),
-                )
-                .order_by(Check.checked_at)
-                .all()
-            )
+        targets = db.query(Target.id, Target.name).order_by(Target.name).all()
 
-    hour_buckets: dict[int, dict[int, bool]] = {target_id: {} for target_id in target_ids}
-    latest_up: dict[int, bool] = {}
-    for target_id, checked_at, status_code in rows:
-        hour_offset = int((now - checked_at).total_seconds() // 3600)
-        is_up = status_code is not None
-        if 0 <= hour_offset < PUBLIC_STATUS_WINDOW_HOURS:
-            bucket = hour_buckets[target_id]
-            bucket[hour_offset] = bucket.get(hour_offset, True) and is_up
-        latest_up[target_id] = is_up
-
+    heartbeats = get_target_heartbeats()
     entries = []
     for target_id, name in targets:
-        bucket = hour_buckets.get(target_id, {})
-        hours = [bucket.get(offset) for offset in range(PUBLIC_STATUS_WINDOW_HOURS - 1, -1, -1)]
+        hours = heartbeats.get(target_id, [])
         entries.append(
             {
                 "id": target_id,
                 "name": name,
-                "up": latest_up.get(target_id),
+                "up": hours[-1] if hours else None,
                 "hours": hours,
             }
         )

@@ -105,6 +105,11 @@ body {{
     border: 1px solid {_hex_to_rgba(COLOR_TOKENS["text_muted"], 0.35)};
     border-radius: 8px;
     padding: 12px 16px;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}}
+.ar-panel:hover {{
+    border-color: {_hex_to_rgba(COLOR_TOKENS["text_muted"], 0.6)};
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }}
 .ar-panel-eyebrow {{
     text-transform: uppercase;
@@ -138,10 +143,13 @@ body {{
 }}
 .ar-card-hover {{
     border-radius: 8px !important;
-    transition: background-color 0.15s ease;
+    box-shadow: none;
+    transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }}
 .ar-card-hover:hover {{
     background-color: var(--ar-bg-surface-raised) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    transform: translateY(-2px);
 }}
 .ar-console {{
     background: var(--ar-bg-canvas);
@@ -167,6 +175,20 @@ body {{
 @keyframes ar-live-pulse {{
     0%, 100% {{ opacity: 1; }}
     50% {{ opacity: 0.35; }}
+}}
+.ar-stat-flash {{
+    animation: ar-stat-flash 0.5s ease-out;
+}}
+@keyframes ar-stat-flash {{
+    0% {{ opacity: 0.4; }}
+    100% {{ opacity: 1; }}
+}}
+.ar-sidebar-row {{
+    border-radius: 6px;
+    cursor: pointer;
+}}
+.ar-sidebar-row-selected {{
+    background-color: var(--ar-bg-surface-raised) !important;
 }}
 </style>
 """
@@ -247,7 +269,7 @@ def format_last_update() -> str:
 
 def _stat_card(value: str, label: str, status: str = "neutral") -> None:
     color = COLOR_TOKENS["text_primary"] if status == "neutral" else COLOR_TOKENS.get(status, COLOR_TOKENS["text_primary"])
-    with ui.column().classes("items-start gap-0 q-px-md q-py-sm").style(
+    with ui.column().classes("ar-stat-flash items-start gap-0 q-px-md q-py-sm").style(
         f"background: {COLOR_TOKENS['bg_surface']}; border: 1px solid {_hex_to_rgba(COLOR_TOKENS['text_muted'], 0.35)}; "
         "border-radius: 8px; min-width: 128px"
     ):
@@ -255,6 +277,71 @@ def _stat_card(value: str, label: str, status: str = "neutral") -> None:
         ui.label(label).style(
             f"font-size: 0.7rem; color: {COLOR_TOKENS['text_muted']}; text-transform: uppercase; letter-spacing: 0.04em"
         )
+
+
+def render_gauge(
+    value: float | None,
+    min_value: float,
+    max_value: float,
+    color_stops: list[tuple[float, str]],
+    status: str,
+    center_text: str,
+    center_subtext: str | None = None,
+    height: str = "150px",
+) -> None:
+    if value is None:
+        with ui.column().classes("items-center gap-1").style("min-width: 150px"):
+            render_empty_state("-")
+            if center_subtext:
+                ui.label(center_subtext).style(
+                    f"font-size: 0.7rem; color: {COLOR_TOKENS['text_muted']}; text-transform: uppercase; letter-spacing: 0.04em"
+                )
+        return
+
+    span = max_value - min_value
+    zones = [
+        [max(0.0, min(1.0, (boundary - min_value) / span)), COLOR_TOKENS.get(status_key, COLOR_TOKENS["neutral"])]
+        for boundary, status_key in color_stops
+    ]
+    color = COLOR_TOKENS.get(status, COLOR_TOKENS["text_primary"])
+    options = {
+        **ECHARTS_DARK_THEME,
+        **CHART_ANIMATION_OPTIONS,
+        "series": [
+            {
+                "type": "gauge",
+                "startAngle": 210,
+                "endAngle": -30,
+                "min": min_value,
+                "max": max_value,
+                "radius": "90%",
+                "center": ["50%", "55%"],
+                "axisLine": {"lineStyle": {"width": 10, "color": zones}},
+                "pointer": {"show": False},
+                "axisTick": {"show": False},
+                "splitLine": {"show": False},
+                "axisLabel": {"show": False},
+                "anchor": {"show": False},
+                "title": {"show": False},
+                "detail": {
+                    "valueAnimation": False,
+                    "formatter": center_text,
+                    "color": color,
+                    "fontSize": 20,
+                    "fontWeight": 600,
+                    "fontFamily": FONT_FAMILY_MONO,
+                    "offsetCenter": [0, "5%"],
+                },
+                "data": [{"value": value}],
+            }
+        ],
+    }
+    with ui.column().classes("items-center gap-0").style("min-width: 150px"):
+        ui.echart(options).classes("w-full").style(f"height: {height}")
+        if center_subtext:
+            ui.label(center_subtext).style(
+                f"font-size: 0.7rem; color: {COLOR_TOKENS['text_muted']}; text-transform: uppercase; letter-spacing: 0.04em"
+            )
 
 
 @contextmanager
@@ -268,9 +355,7 @@ def render_page_shell(on_logout: Callable[[], None], back_link: tuple[str, str] 
                 if back_link:
                     href, label = back_link
                     ui.button(label, icon="arrow_back", on_click=lambda: ui.navigate.to(href)).props("flat dense")
-            with ui.row().classes("items-center gap-2"):
-                ui.button("Durum Sayfası", icon="public", on_click=lambda: ui.navigate.to("/durum")).props("flat")
-                ui.button("Çıkış", icon="logout", on_click=on_logout).props("flat")
+            ui.button("Çıkış", icon="logout", on_click=on_logout).props("flat")
         yield
 
 
@@ -278,42 +363,56 @@ def _grade_badge(letter_grade: str | None) -> None:
     render_status_chip(grade_to_status(letter_grade), letter_grade or "-")
 
 
-def render_target_card(
+SIDEBAR_HEARTBEAT_VISIBLE = 12
+
+
+def render_sidebar_target_row(
     card: dict,
-    on_tag_click: Callable[[str], None],
+    heartbeats: list[bool | None],
+    is_selected: bool,
+    on_select: Callable[[int], None],
     on_edit: Callable[[int], None],
+    on_tag_click: Callable[[str], None],
 ) -> None:
     stripe_status = grade_to_status(card["letter_grade"])
-    with ui.card().classes(f"w-full ar-card-hover ar-status-stripe ar-status-stripe-{stripe_status}").style(
-        f"background: {COLOR_TOKENS['bg_surface']}"
+    row_classes = (
+        f"w-full items-start gap-1 q-py-xs q-px-sm ar-card-hover ar-sidebar-row "
+        f"ar-status-stripe ar-status-stripe-{stripe_status}"
+    )
+    if is_selected:
+        row_classes += " ar-sidebar-row-selected"
+    with ui.column().classes(row_classes).style(f"background: {COLOR_TOKENS['bg_surface']}").on(
+        "click", lambda: on_select(card["id"]), []
     ):
-        with ui.row().classes("items-center justify-between w-full"):
-            with ui.row().classes("items-center gap-1"):
-                ui.link(card["name"], f"/targets/{card['id']}").classes("text-h6 ar-link-plain")
-                if card["has_open_alerts"]:
-                    ui.icon(STATUS_ICONS["bad"]).style(f"color: {COLOR_TOKENS['bad']}").classes("text-xl").tooltip(
-                        "Açık uyarı var"
-                    )
-            with ui.row().classes("items-center gap-1"):
-                ui.button(icon="edit", on_click=lambda: on_edit(card["id"])).props("flat dense round")
-                _grade_badge(card["letter_grade"])
-        if not card["active"]:
-            render_status_chip("neutral", "Pasif")
-        elif card["status_code"]:
-            render_status_chip("good", f"HTTP {card['status_code']}")
-        elif card["network_issue"]:
-            render_status_chip("neutral", "Ağ sorunu")
-        else:
-            render_status_chip("bad", "Erişilemiyor")
-        ui.label(card["url"]).classes("text-caption text-grey")
+        with ui.row().classes("w-full items-center justify-between"):
+            with ui.column().classes("gap-0 items-start"):
+                with ui.row().classes("items-center gap-1"):
+                    ui.label(card["name"]).classes("text-body2").style(f"color: {COLOR_TOKENS['text_primary']}")
+                    if card["has_open_alerts"]:
+                        ui.icon(STATUS_ICONS["bad"]).style(f"color: {COLOR_TOKENS['bad']}; font-size: 0.9rem")
+                if not card["active"]:
+                    status_text, status = "Pasif", "neutral"
+                elif card["status_code"]:
+                    status_text, status = f"HTTP {card['status_code']}", "good"
+                elif card["network_issue"]:
+                    status_text, status = "Ağ sorunu", "neutral"
+                else:
+                    status_text, status = "Erişilemiyor", "bad"
+                ui.label(status_text).classes("text-caption").style(f"color: {COLOR_TOKENS[status]}")
+            with ui.row().classes("items-center gap-2"):
+                with ui.row().classes("gap-0.5 items-end"):
+                    for is_up in heartbeats[-SIDEBAR_HEARTBEAT_VISIBLE:]:
+                        bar_status = "neutral" if is_up is None else ("good" if is_up else "bad")
+                        ui.element("div").classes("w-1 h-4 rounded").style(
+                            f"background-color: {COLOR_TOKENS[bar_status]}"
+                        )
+                ui.button(icon="edit", on_click=lambda: on_edit(card["id"])).props("flat dense round size=sm").on(
+                    "click.stop", lambda: None, []
+                )
         if card["tags"]:
-            with ui.row().classes("gap-1"):
+            with ui.row().classes("gap-1").on("click.stop", lambda: None, []):
                 for tag in card["tags"]:
-                    ui.chip(tag, on_click=lambda t=tag: on_tag_click(t)).props("dense outline")
-        if card["checked_at"]:
-            ui.label(f"Son kontrol: {card['checked_at']}").classes("text-caption ar-mono")
-        if card["cert_days_remaining"] is not None:
-            ui.label(f"Sertifikaya kalan gün: {card['cert_days_remaining']}").classes("text-caption ar-mono")
+                    ui.chip(tag, on_click=lambda t=tag: on_tag_click(t)).props("dense outline size=sm")
 
 
 def render_active_filters(
@@ -350,13 +449,28 @@ def _big_metric(label: str, value: str, unit: str = "", status: str = "neutral")
                 ui.label(unit).style(f"font-size: 0.75rem; color: {color}; opacity: 0.6")
 
 
+UPTIME_GAUGE_MIN = 95.0
+UPTIME_GAUGE_MAX = 100.0
+UPTIME_GAUGE_STOPS: list[tuple[float, str]] = [(99.0, "bad"), (99.9, "warn"), (100.0, "good")]
+
+SCORE_GAUGE_STOPS: list[tuple[float, str]] = [(70, "bad"), (80, "warn"), (100, "good")]
+
+
 def render_uptime_summary(stats: dict) -> None:
     with ui.row().classes("items-end gap-6"):
         for label, key in (("7 gün çalışma süresi", "uptime_7d"), ("30 gün çalışma süresi", "uptime_30d")):
             pct = stats.get(key)
             status = uptime_pct_to_status(pct)
-            value = f"{pct}" if pct is not None else "-"
-            _big_metric(label, value, "%" if pct is not None else "", status)
+            render_gauge(
+                value=pct,
+                min_value=UPTIME_GAUGE_MIN,
+                max_value=UPTIME_GAUGE_MAX,
+                color_stops=UPTIME_GAUGE_STOPS,
+                status=status,
+                center_text=f"{pct}%" if pct is not None else "-",
+                center_subtext=label,
+                height="130px",
+            )
 
 
 def render_uptime_timeline(timeline: list[dict]) -> None:
@@ -382,19 +496,23 @@ def render_downtime_incidents(incidents: list[dict]) -> None:
 
 
 def render_overview_summary(summary: dict) -> None:
-    with ui.row().classes("items-stretch gap-3"):
+    with ui.row().classes("items-center gap-3"):
         _stat_card(f"{summary['healthy_count']}/{summary['total_targets']}", "Erişilebilir")
         _stat_card(f"{summary['safe_count']}/{summary['total_targets']}", "Güvenli")
         alert_status = "bad" if summary["open_alerts_count"] else "neutral"
         _stat_card(str(summary["open_alerts_count"]), "Açık Uyarı", alert_status)
-        if summary["average_score"] is None:
-            _stat_card("-", "Ortalama Not")
-        else:
-            _stat_card(
-                f"{summary['average_score']} ({summary['average_grade']})",
-                "Ortalama Not",
-                grade_to_status(summary["average_grade"]),
-            )
+        average_score = summary["average_score"]
+        average_grade = summary["average_grade"]
+        render_gauge(
+            value=average_score,
+            min_value=0,
+            max_value=100,
+            color_stops=SCORE_GAUGE_STOPS,
+            status=grade_to_status(average_grade) if average_score is not None else "neutral",
+            center_text=f"{average_score} ({average_grade})" if average_score is not None else "-",
+            center_subtext="Ortalama Not",
+            height="130px",
+        )
 
 
 def render_grade_distribution(distribution: dict) -> None:
@@ -409,12 +527,22 @@ def render_grade_distribution(distribution: dict) -> None:
     options = {
         **ECHARTS_DARK_THEME,
         "tooltip": {**TOOLTIP_STYLE, "trigger": "item"},
-        "legend": {"bottom": 0, "textStyle": {"color": COLOR_TOKENS["text_muted"]}},
+        "legend": {
+            "orient": "vertical",
+            "right": 10,
+            "top": "middle",
+            "itemWidth": 10,
+            "itemHeight": 10,
+            "itemGap": 10,
+            "textStyle": {"color": COLOR_TOKENS["text_muted"], "fontSize": 12},
+        },
         "series": [
             {
                 "type": "pie",
-                "radius": ["40%", "70%"],
+                "radius": ["42%", "68%"],
+                "center": ["38%", "50%"],
                 "avoidLabelOverlap": True,
+                "label": {"show": False},
                 "data": data,
             }
         ],
@@ -498,42 +626,26 @@ def render_domain_expiry_calendar(entries: list[dict]) -> None:
                 ui.label(f"{entry['expiry_date']} — kalan gün: {entry['days_remaining']}").classes("text-caption ar-mono")
 
 
-def render_public_status_banner(entries: list[dict]) -> None:
-    known = [entry for entry in entries if entry["up"] is not None]
-    down = [entry for entry in known if not entry["up"]]
-    if not known:
-        status, text = "neutral", "Durum bilgisi henüz yok"
-    elif down:
-        status, text = "bad", f"{len(down)} hizmette kesinti var"
-    else:
-        status, text = "good", "Tüm hizmetler çalışıyor"
-    color = COLOR_TOKENS[status]
-    with ui.row().classes("w-full items-center gap-3 q-pa-md rounded").style(
-        f"background-color: {color}1a; border: 1px solid {color}"
-    ):
-        ui.icon(STATUS_ICONS.get(status, STATUS_ICONS["neutral"])).style(f"color: {color}; font-size: 2rem")
-        ui.label(text).style(f"color: {color}").classes("text-h6")
-
-
-def render_public_status_list(entries: list[dict]) -> None:
+def render_fleet_status(entries: list[dict]) -> None:
     if not entries:
-        render_empty_state("Şu an görüntülenecek hizmet yok.")
+        render_empty_state("Henüz izlenen hedef yok.")
         return
-    with ui.column().classes("w-full gap-2"):
+    with ui.column().classes("w-full gap-1"):
         for entry in entries:
             status = "neutral" if entry["up"] is None else ("good" if entry["up"] else "bad")
             label = "Bilinmiyor" if entry["up"] is None else ("Çalışıyor" if entry["up"] else "Kesinti")
-            with render_panel(entry["name"], status=status):
-                render_status_chip(status, label)
-                with ui.row().classes("gap-0.5 items-end q-mt-xs"):
-                    for hour_up in entry["hours"]:
-                        hour_status = "neutral" if hour_up is None else ("good" if hour_up else "bad")
-                        ui.element("div").classes("w-2 h-6 rounded").style(
-                            f"background-color: {COLOR_TOKENS[hour_status]}"
-                        )
-                ui.label(f"Son {len(entry['hours'])} saat").classes("text-caption").style(
-                    f"color: {COLOR_TOKENS['text_muted']}"
-                )
+            with ui.row().classes(
+                f"w-full items-center justify-between q-py-xs q-px-sm ar-status-stripe ar-status-stripe-{status}"
+            ):
+                ui.label(entry["name"]).classes("text-body2")
+                with ui.row().classes("items-center gap-2"):
+                    render_status_chip(status, label)
+                    with ui.row().classes("gap-0.5 items-end"):
+                        for hour_up in entry["hours"][-SIDEBAR_HEARTBEAT_VISIBLE:]:
+                            hour_status = "neutral" if hour_up is None else ("good" if hour_up else "bad")
+                            ui.element("div").classes("w-1 h-4 rounded").style(
+                                f"background-color: {COLOR_TOKENS[hour_status]}"
+                            )
 
 
 def render_response_time_percentiles(stats: dict) -> None:

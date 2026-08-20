@@ -17,7 +17,7 @@ PBKDF2_ITERATIONS = 260_000
 LOGIN_MAX_ATTEMPTS = 5
 LOGIN_LOCKOUT_SECONDS = 60
 
-UNRESTRICTED_PATHS = {"/login", "/health", "/durum"}
+UNRESTRICTED_PATHS = {"/login", "/health"}
 UNRESTRICTED_PREFIXES = ("/socket.io", "/_nicegui")
 
 _failed_attempts: dict[str, list[float]] = {}
