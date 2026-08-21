@@ -40,6 +40,29 @@ def _has_caa(hostname: str, timeout: float) -> bool | None:
     return len(answers) > 0
 
 
+DNS_RECORD_TYPES = ["A", "AAAA", "CNAME", "MX", "NS"]
+
+
+def _resolve_record_values(hostname: str, record_type: str, timeout: float) -> list[str]:
+    try:
+        answers = dns.resolver.resolve(hostname, record_type, lifetime=timeout)
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer):
+        return []
+    except dns.exception.DNSException:
+        return []
+    return sorted({str(rdata).rstrip(".") for rdata in answers})
+
+
+def check_dns_records(url: str, timeout: float = 5.0) -> dict:
+    hostname = urlparse(url).hostname
+    if not hostname:
+        return {record_type.lower(): [] for record_type in DNS_RECORD_TYPES}
+    return {
+        record_type.lower(): _resolve_record_values(hostname, record_type, timeout)
+        for record_type in DNS_RECORD_TYPES
+    }
+
+
 def check_dns_hygiene(url: str, timeout: float = 5.0) -> dict:
     hostname = urlparse(url).hostname
     if not hostname:

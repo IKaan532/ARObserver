@@ -247,6 +247,35 @@ def _check_content_integrity(db: Session, target: Target, latest_check: Check) -
     return new_alerts
 
 
+DNS_RECORD_TYPES_FOR_ALERT = ["a", "aaaa", "cname", "mx", "ns"]
+
+
+def _check_dns_change(db: Session, target: Target, previous_check: Check | None, latest_check: Check) -> list[Alert]:
+    if previous_check is None:
+        return []
+    previous_records = (previous_check.dns_result or {}).get("records") or {}
+    current_records = (latest_check.dns_result or {}).get("records") or {}
+    if not previous_records or not current_records:
+        return []
+
+    changes = []
+    for record_type in DNS_RECORD_TYPES_FOR_ALERT:
+        old_values = sorted(previous_records.get(record_type) or [])
+        new_values = sorted(current_records.get(record_type) or [])
+        if old_values != new_values:
+            old_text = ", ".join(old_values) or "(yok)"
+            new_text = ", ".join(new_values) or "(yok)"
+            changes.append(f"{record_type.upper()}: {old_text} → {new_text}")
+
+    if not changes:
+        return []
+
+    message = "DNS kayıtları değişti: " + "; ".join(changes)
+    alert = Alert(target_id=target.id, alert_type="dns_record_changed", message=message, resolved_at=datetime.utcnow())
+    db.add(alert)
+    return [alert]
+
+
 def evaluate_rules(db: Session, target: Target, latest_check: Check) -> list[Alert]:
     if latest_check.network_issue:
         return []
@@ -264,6 +293,7 @@ def evaluate_rules(db: Session, target: Target, latest_check: Check) -> list[Ale
     new_alerts += _check_domain_expiry(db, target)
     new_alerts += _check_reputation_flagged(db, target)
     new_alerts += _check_score_drop(db, target, previous_check, latest_check)
+    new_alerts += _check_dns_change(db, target, previous_check, latest_check)
     new_alerts += _check_missing_headers(db, target, previous_check, latest_check)
     new_alerts += _check_keyword_missing(db, target, latest_check)
     new_alerts += _check_unexpected_status(db, target, latest_check)

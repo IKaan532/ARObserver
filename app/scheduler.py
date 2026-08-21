@@ -11,7 +11,7 @@ from sqlalchemy import desc
 from app.alerting.rules import cleanup_legacy_cert_expiry_alerts, evaluate_rules, notify, to_alert_payloads
 from app.checks.content import check_content, compare_fingerprint
 from app.checks.ct_log import check_certificate_transparency
-from app.checks.dns import check_dns, check_dns_hygiene
+from app.checks.dns import check_dns, check_dns_hygiene, check_dns_records
 from app.checks.domain_expiry import check_domain_expiry
 from app.checks.reputation import check_reputation
 from app.checks.headers import check_headers
@@ -112,6 +112,7 @@ async def run_target_check(target_id: int) -> None:
     )
     dns = await asyncio.to_thread(check_dns, url)
     dns.update(await asyncio.to_thread(check_dns_hygiene, url))
+    dns["records"] = await asyncio.to_thread(check_dns_records, url)
     tls = await asyncio.to_thread(check_tls, url)
 
     fingerprint = content.get("fingerprint")
