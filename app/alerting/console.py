@@ -1,7 +1,6 @@
-from app.alerting.base import Notifier
-from app.models import Alert
+from app.alerting.base import AlertPayload, Notifier
 
 
 class ConsoleNotifier(Notifier):
-    def send(self, alert: Alert) -> None:
+    def send(self, alert: AlertPayload) -> None:
         print(f"[ARObserver] {alert.alert_type} - hedef #{alert.target_id}: {alert.message}")

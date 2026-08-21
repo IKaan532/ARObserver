@@ -1,13 +1,12 @@
 import smtplib
 from email.message import EmailMessage
 
-from app.alerting.base import Notifier
+from app.alerting.base import AlertPayload, Notifier
 from app.config import settings
-from app.models import Alert
 
 
 class EmailNotifier(Notifier):
-    def send(self, alert: Alert) -> None:
+    def send(self, alert: AlertPayload) -> None:
         message = EmailMessage()
         message["Subject"] = f"ARObserver uyarısı: {alert.alert_type}"
         message["From"] = settings.smtp_from

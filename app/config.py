@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
 
+    webhook_url: str = ""
+
     ct_log_check_enabled: bool = False
 
     user_agent: str = "ARObserver/1.0 (+https://arnavutkoy.bel.tr)"

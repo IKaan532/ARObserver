@@ -8,7 +8,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from sqlalchemy import desc
 
-from app.alerting.rules import cleanup_legacy_cert_expiry_alerts, evaluate_rules, notify
+from app.alerting.rules import cleanup_legacy_cert_expiry_alerts, evaluate_rules, notify, to_alert_payloads
 from app.checks.content import check_content, compare_fingerprint
 from app.checks.ct_log import check_certificate_transparency
 from app.checks.dns import check_dns, check_dns_hygiene
@@ -191,7 +191,9 @@ async def run_target_check(target_id: int) -> None:
         new_alerts = evaluate_rules(db, target, check)
         db.commit()
 
-        notify(new_alerts)
+        alert_payloads = to_alert_payloads(new_alerts)
+
+    await asyncio.to_thread(notify, alert_payloads)
 
     logger.info("target %s checked: score=%s grade=%s", url, scoring["score"], scoring["letter_grade"])
 

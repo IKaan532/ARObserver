@@ -4,9 +4,11 @@ from datetime import datetime
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
+from app.alerting.base import AlertPayload
 from app.alerting.console import ConsoleNotifier
 from app.alerting.email import EmailNotifier
 from app.alerting.telegram import TelegramNotifier
+from app.alerting.webhook import WebhookNotifier
 from app.checks.headers import SECURITY_HEADERS
 from app.config import settings
 from app.models import Alert, Check, Target
@@ -275,10 +277,25 @@ def _active_notifiers():
         notifiers.append(EmailNotifier())
     if settings.telegram_bot_token and settings.telegram_chat_id:
         notifiers.append(TelegramNotifier())
+    if settings.webhook_url:
+        notifiers.append(WebhookNotifier())
     return notifiers
 
 
-def notify(alerts: list[Alert]) -> None:
+def to_alert_payloads(alerts: list[Alert]) -> list[AlertPayload]:
+    return [
+        AlertPayload(
+            id=alert.id,
+            alert_type=alert.alert_type,
+            target_id=alert.target_id,
+            message=alert.message,
+            created_at=alert.created_at,
+        )
+        for alert in alerts
+    ]
+
+
+def notify(alerts: list[AlertPayload]) -> None:
     for notifier in _active_notifiers():
         for alert in alerts:
             try:
