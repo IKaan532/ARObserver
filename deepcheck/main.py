@@ -28,6 +28,30 @@ document.addEventListener('securitypolicyviolation', (e) => {
 });
 """
 
+CORE_WEB_VITALS_INIT_SCRIPT = """
+window.__coreWebVitals = {lcp_ms: null, cls: 0};
+try {
+    new PerformanceObserver((list) => {
+        const entries = list.getEntries();
+        const last = entries[entries.length - 1];
+        if (last) {
+            window.__coreWebVitals.lcp_ms = last.renderTime || last.loadTime || last.startTime;
+        }
+    }).observe({type: 'largest-contentful-paint', buffered: true});
+} catch (e) {}
+try {
+    new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) {
+            if (!entry.hadRecentInput) {
+                window.__coreWebVitals.cls += entry.value;
+            }
+        }
+    }).observe({type: 'layout-shift', buffered: true});
+} catch (e) {}
+"""
+
+CORE_WEB_VITALS_SETTLE_MS = 1000
+
 TIMING_SCRIPT = """() => {
     const nav = performance.getEntriesByType('navigation')[0];
     if (!nav) return {dcl: null, load: null};
@@ -152,6 +176,7 @@ async def deep_check(payload: DeepCheckRequest):
             browser = await playwright.chromium.launch(args=["--no-sandbox"])
             context = await browser.new_context()
             await context.add_init_script(CSP_INIT_SCRIPT)
+            await context.add_init_script(CORE_WEB_VITALS_INIT_SCRIPT)
             page = await context.new_page()
 
             async def handle_route(route) -> None:
@@ -179,9 +204,12 @@ async def deep_check(payload: DeepCheckRequest):
             except Exception:
                 pass
 
+            await page.wait_for_timeout(CORE_WEB_VITALS_SETTLE_MS)
+
             timing = await page.evaluate(TIMING_SCRIPT)
             csp_violations = await page.evaluate("() => window.__cspViolations || []")
             sri_entries = await page.evaluate(SRI_SCRIPT)
+            core_web_vitals = await page.evaluate("() => window.__coreWebVitals || {lcp_ms: null, cls: null}")
             cookies_raw = await context.cookies()
 
             await browser.close()
@@ -257,5 +285,9 @@ async def deep_check(payload: DeepCheckRequest):
         "cookies": cookies,
         "sri": {"missing": missing_sri, "present_count": present_sri_count},
         "failed_subresources": {"own_domain": own_failed, "third_party": third_failed},
+        "core_web_vitals": {
+            "lcp_ms": core_web_vitals.get("lcp_ms"),
+            "cls": core_web_vitals.get("cls"),
+        },
         "error": None,
     }
