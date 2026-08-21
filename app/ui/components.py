@@ -233,6 +233,26 @@ def cert_days_to_status(days_remaining: int) -> str:
     return "good"
 
 
+def lcp_ms_to_status(lcp_ms: float | None) -> str:
+    if lcp_ms is None:
+        return "neutral"
+    if lcp_ms <= 2500:
+        return "good"
+    if lcp_ms <= 4000:
+        return "warn"
+    return "bad"
+
+
+def cls_to_status(cls: float | None) -> str:
+    if cls is None:
+        return "neutral"
+    if cls <= 0.1:
+        return "good"
+    if cls <= 0.25:
+        return "warn"
+    return "bad"
+
+
 def severity_to_status(severity: str) -> str:
     return {"high": "bad", "medium": "warn", "low": "neutral"}.get(severity, "neutral")
 
@@ -754,6 +774,25 @@ def render_deep_check_result(data: dict | None) -> None:
         load_ms = metrics.get("load_ms")
         load_text = f"{load_ms:.0f} ms" if load_ms is not None else "-"
         ui.label(f"Load: {load_text}").classes("text-caption text-grey")
+
+    core_web_vitals = result.get("core_web_vitals") or {}
+    ui.label("CORE WEB VITALS").classes("text-caption text-weight-medium q-mt-sm")
+    with ui.row().classes("gap-6"):
+        lcp_ms = core_web_vitals.get("lcp_ms")
+        lcp_text = f"{lcp_ms:.0f} ms" if lcp_ms is not None else "-"
+        with ui.row().classes("items-center gap-2"):
+            ui.label(f"LCP: {lcp_text}").classes("text-caption")
+            render_status_chip(lcp_ms_to_status(lcp_ms), "")
+        cls = core_web_vitals.get("cls")
+        cls_text = f"{cls:.3f}" if cls is not None else "-"
+        with ui.row().classes("items-center gap-2"):
+            ui.label(f"CLS: {cls_text}").classes("text-caption")
+            render_status_chip(cls_to_status(cls), "")
+    ui.label(
+        "INP ölçülmedi — Derin Kontrol otomatik/etkileşimsiz bir sayfa ziyareti "
+        "olduğu için gerçek kullanıcı etkileşimi gerektiren INP hesaplanamaz "
+        "(Lighthouse/PageSpeed Insights de lab testinde INP raporlamaz)."
+    ).classes("text-caption text-grey")
 
     third_party = result.get("third_party_domains") or []
     with ui.expansion(f"Üçüncü Taraf Alan Adları ({len(third_party)})").classes("w-full q-mt-sm"):

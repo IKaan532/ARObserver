@@ -496,10 +496,12 @@ def index_page(grade: str = "", group: str = "", q: str = "") -> None:
             sidebar_refs["refresh"]()
 
     def build_sidebar() -> None:
+        dialog_container = ui.column()
+
         def open_target_dialog(target: dict | None) -> None:
             is_edit = target is not None
 
-            with ui.dialog() as dialog, ui.card().classes("w-96"):
+            with dialog_container, ui.dialog() as dialog, ui.card().classes("w-96"):
                 ui.label("Hedefi Düzenle" if is_edit else "Yeni Hedef").classes("text-h6")
                 name_input = ui.input(label="Ad", value=target["name"] if is_edit else "").classes("w-full")
                 url_input = ui.input(label="URL", value=target["url"] if is_edit else "").classes("w-full")

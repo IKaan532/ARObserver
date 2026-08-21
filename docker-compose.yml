@@ -6,10 +6,15 @@ services:
     env_file:
       - .env
     volumes:
-      - ./data:/app/data
+      - arobserver_data:/app/data
       - ./targets.yaml:/app/targets.yaml:ro
     restart: unless-stopped
 
   deepcheck:
     build: ./deepcheck
     restart: unless-stopped
+
+volumes:
+  arobserver_data:
+    name: arobserver_data
+    external: true
